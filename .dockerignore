@@ -1,0 +1,5 @@
+.git
+.gitignore
+.devcontainer
+__pycache__
+*.pyc 
