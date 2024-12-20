@@ -4,6 +4,9 @@ import urllib.parse
 from halo import Halo
 from datetime import datetime
 import sqlite3
+from dateutil import parser
+import os
+from gnews import GNews
 
 def init_db():
     conn = sqlite3.connect('weather_history.db')
@@ -272,6 +275,65 @@ def nfl_menu():
         else:
             print("\nInvalid choice. Please enter 1-2.")
 
+def get_news(domain=None):
+    """Fetch news articles using GNews"""
+    spinner = Halo('Fetching news articles...')
+    spinner.start()
+    
+    try:
+        # Initialize GNews with default settings
+        google_news = GNews(language='en', country='US', period='1d', max_results=5)
+        
+        # Set default domain to wsj.com if none provided
+        domain = domain or 'wsj.com'
+        
+        # Use the correct method to fetch articles by site
+        articles = google_news.get_news_by_site(domain)
+        
+        if not articles:
+            print(f"\nNo articles found for domain: {domain}")
+            return
+            
+        print(f"\nLatest news from {domain}:")
+        print("-" * 80)
+        
+        for article in articles:
+            # Parse and format the date
+            pub_date = parser.parse(article['published date'])
+            friendly_date = pub_date.strftime("%B %d, %Y at %I:%M %p")
+            
+            print(f"Title: {article['title']}")
+            print(f"Published: {friendly_date}")
+            print(f"URL: {article['url']}")
+            print("-" * 80)
+            
+    except Exception as e:
+        print(f"\nUnexpected error: {e}")
+    finally:
+        spinner.stop()
+    
+    input("\nPress Enter to continue...")
+
+def news_menu():
+    """Display and handle news menu"""
+    while True:
+        print("\n=== News Menu ===")
+        print("1. Get news from WSJ")
+        print("2. Get news from specific domain")
+        print("3. Return to main menu")
+        
+        choice = input("\nEnter your choice (1-3): ")
+        
+        if choice == "1":
+            get_news()  # Will use default wsj.com
+        elif choice == "2":
+            domain = input("\nEnter domain (e.g., wsj.com): ")
+            get_news(domain)
+        elif choice == "3":
+            return
+        else:
+            print("\nInvalid choice. Please enter 1-3.")
+
 def main_menu():
     """Display and handle main menu"""
     init_db()  # Ensure database exists
@@ -279,19 +341,22 @@ def main_menu():
         print("\n=== Multi-Service CLI Tool ===")
         print("1. Weather Lookup")
         print("2. NFL Scores")
-        print("3. Quit")
+        print("3. News")
+        print("4. Quit")
         
-        choice = input("\nEnter your choice (1-3): ")
+        choice = input("\nEnter your choice (1-4): ")
         
         if choice == "1":
             weather_menu()
         elif choice == "2":
             nfl_menu()
         elif choice == "3":
+            news_menu()
+        elif choice == "4":
             print("\nGoodbye!")
             sys.exit(0)
         else:
-            print("\nInvalid choice. Please enter 1-3.")
+            print("\nInvalid choice. Please enter 1-4.")
 
 if __name__ == "__main__":
     main_menu()
