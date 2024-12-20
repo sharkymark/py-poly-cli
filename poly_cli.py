@@ -3,11 +3,13 @@ import sys
 import urllib.parse
 from halo import Halo
 from datetime import datetime
+from datetime import datetime, timedelta
 import sqlite3
 from dateutil import parser
 import os
 from gnews import GNews
 import json
+import math
 
 def init_db():
     conn = sqlite3.connect('weather_history.db')
@@ -411,6 +413,175 @@ def bls_menu():
         else:
             print("\nInvalid choice. Please enter 1-2.")
 
+def extract_state(matched_address):
+    """Extract the state from the matched address"""
+    address_parts = matched_address.split(',')
+    state = address_parts[-2].strip()  # Assuming state is the second-to-last part
+    return state
+
+
+def haversine_distance(lat1, lon1, lat2, lon2):
+    """Calculate the distance between two points on a sphere using the Haversine formula"""
+    R = 6371  # Radius of the Earth in kilometers
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    distance = R * c
+    return distance
+
+def get_nearest_station(address_data):
+    """Find the nearest NOAA tide station using metadata API"""
+    url = f"https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?format=json"
+    response = requests.get(url)
+    response.raise_for_status()
+    data = response.json()
+    
+    # Extract the state from the address data
+    state = extract_state(address_data['matched_address'])
+    
+    # Manually filter the results to find the stations in the state
+    state_stations = [station for station in data['stations'] if station['state'] == state]
+    
+    # Calculate the distance between each station and the street address
+    nearest_station = None
+    min_distance = float('inf')
+    for station in state_stations:
+        station_lat = float(station['lat'])
+        station_lon = float(station.get('lon', station.get('lng')))  # Handle both 'lon' and 'lng' keys
+        distance = haversine_distance(address_data['lat'], address_data['lon'], station_lat, station_lon)
+        if distance < min_distance:
+            min_distance = distance
+            nearest_station = station['id']
+    
+    return nearest_station
+
+def get_tide_data(station_id):
+    """Fetch tide data from NOAA API for a given station ID"""
+    today = datetime.today().strftime("%Y%m%d")
+    tomorrow = (datetime.today() + timedelta(days=1)).strftime("%Y%m%d")
+    
+    url = f"https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
+    params = {
+        "product": "predictions",
+        "application": "NOS.COOPS.TAC.WL",
+        "begin_date": f"{today}",
+        "end_date": f"{tomorrow}",
+        "datum": "MLLW",
+        "station": station_id,
+        "time_zone": "lst_ldt",
+        "units": "english",
+        "interval": "hilo",
+        "format": "json"
+    }
+    response = requests.get(url, params=params)
+    response.raise_for_status()
+    return response.json()
+
+def display_tide_data(tide_data):
+    """Display tide information"""
+    print("\nTide Information:")
+    print("-" * 50)
+    for prediction in tide_data['predictions']:
+        time = prediction['t']
+        tide_type = prediction['type']
+        print(f"Time: {time}, Tide: {tide_type}")
+    print("-" * 50)
+
+def get_station_info(station_id):
+    """Fetch station information from NOAA API"""
+    url = f"https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/{station_id}.json"
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
+
+def display_station_info(station_info):
+    """Display station information"""
+    print("\nStation Information:")
+    print("-" * 50)
+    
+    # Access the correct keys in the station_info dictionary
+    print(f"Station ID: {station_info['stations'][0]['id']}")
+    print(f"Station Name: {station_info['stations'][0]['name']}")
+    print(f"State: {station_info['stations'][0]['state']}")
+    print(f"Latitude: {station_info['stations'][0]['lat']}")
+    print(f"Longitude: {station_info['stations'][0]['lng']}")
+
+    # Generate Google Maps URL
+    google_maps_url = f"https://www.google.com/maps/@?api=1&map_action=map&center={station_info['stations'][0]['lat']},{station_info['stations'][0]['lng']}&zoom=15"
+
+    print(f"\nClick to view station location on Google Maps: {google_maps_url}")
+    print("-" * 50)
+
+def lookup_tides():
+    """Handle tide lookup logic"""
+    address = input("\nEnter address (street, city, state, zip code): ")
+    
+    # Get coordinates
+    location_data = get_coordinates(address)
+    
+    if location_data is None:
+        print("\nError: Could not find the address. Please check and try again.")
+        return
+    
+    # Display matched address
+    print("\nMatched Address:")
+    print("-" * 50)
+    print(f"Street: {location_data['matched_address'].split(',')[0]}")
+    print(f"City: {location_data['matched_address'].split(',')[1].strip()}")
+    print(f"State: {location_data['matched_address'].split(',')[2].strip()}")
+    print(f"Zip Code: {location_data['matched_address'].split(',')[3].strip()}")
+    print(f"Latitude: {location_data['lat']}")
+    print(f"Longitude: {location_data['lon']}")
+    
+    # Generate Google Maps URL
+    google_maps_url = f"https://www.google.com/maps/@?api=1&map_action=map&center={location_data['lat']},{location_data['lon']}&zoom=15"
+    print(f"\nClick to view matched address on Google Maps: {google_maps_url}")
+    
+    # Get nearest station
+    station_id = get_nearest_station(location_data)
+    
+    if station_id is None:
+        print("\nError: Could not find a nearby tide station.")
+        return
+    
+    # Get station information
+    station_info = get_station_info(station_id)
+    
+    if station_info is None:
+        print("\nError: Could not retrieve station information.")
+        return
+    
+    # Display station information
+    display_station_info(station_info)
+    
+    # Get tide data
+    try:
+        tide_data = get_tide_data(station_id)
+    except requests.exceptions.HTTPError as e:
+        print(f"\nError: Failed to retrieve tide data. {e}")
+        return
+    
+    # Display tide data
+    display_tide_data(tide_data)
+
+def tides_menu():
+    """Display and handle tides menu"""
+    while True:
+        print("\n=== Tides Menu ===")
+        print("1. Look up tides by address")
+        print("2. Return to main menu")
+        
+        choice = input("\nEnter your choice (1-2): ")
+        
+        if choice == "1":
+            lookup_tides()
+        elif choice == "2":
+            return
+        else:
+            print("\nInvalid choice. Please enter 1-2.")
+
 def main_menu():
     """Display and handle main menu"""
     init_db()  # Ensure database exists
@@ -420,9 +591,10 @@ def main_menu():
         print("2. NFL Scores")
         print("3. News")
         print("4. BLS Economic Indicators")
-        print("5. Quit")
+        print("5. Tides")
+        print("6. Quit")
         
-        choice = input("\nEnter your choice (1-5): ")
+        choice = input("\nEnter your choice (1-6): ")
         
         if choice == "1":
             weather_menu()
@@ -433,10 +605,12 @@ def main_menu():
         elif choice == "4":
             bls_menu()
         elif choice == "5":
+            tides_menu()
+        elif choice == "6":
             print("\nGoodbye!")
             sys.exit(0)
         else:
-            print("\nInvalid choice. Please enter 1-5.")
+            print("\nInvalid choice. Please enter 1-6.")
 
 if __name__ == "__main__":
     main_menu()
