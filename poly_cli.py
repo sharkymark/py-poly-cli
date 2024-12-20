@@ -7,6 +7,7 @@ import sqlite3
 from dateutil import parser
 import os
 from gnews import GNews
+import json
 
 def init_db():
     conn = sqlite3.connect('weather_history.db')
@@ -334,6 +335,82 @@ def news_menu():
         else:
             print("\nInvalid choice. Please enter 1-3.")
 
+def get_bls_data(series_id):
+    """Fetch data from BLS API for a given series ID"""
+    url = f"https://api.bls.gov/publicAPI/v2/timeseries/data/{series_id}"
+    headers = {'Content-type': 'application/json'}
+    data = json.dumps({
+        "seriesid": [series_id],
+        "startyear": "2022",
+        "endyear": "2023"
+    })
+    response = requests.post(url, headers=headers, data=data)
+    response.raise_for_status()
+    return response.json()
+
+def display_bls_data():
+    """Display economic indicators from BLS API"""
+    spinner = Halo('Fetching economic indicators...')
+    spinner.start()
+    
+    try:
+        # Define the series IDs for the required economic indicators
+        series_ids = {
+            "CPI": "CUSR0000SA0",
+            "CPI Less Food and Energy": "CUSR0000SA0L1E",
+            "PPI": "PCUOMFG--OMFG--",
+            "Nonfarm Payroll": "CES0000000001",
+            "Unemployment Rate": "LNS14000000"
+        }
+        
+        for name, series_id in series_ids.items():
+            data = get_bls_data(series_id)
+            series_data = data['Results']['series'][0]['data']
+            
+            if len(series_data) < 2:
+                print(f"\n{name}: No sufficient data available.")
+                continue
+            
+            # Extract the latest and previous data points
+            latest_data = series_data[0]
+            previous_data = series_data[1]
+            
+            latest_value = float(latest_data['value'])
+            previous_value = float(previous_data['value'])
+            year = latest_data['year']
+            period = latest_data['periodName']
+            
+            # Calculate percentage change
+            percentage_change = ((latest_value - previous_value) / previous_value) * 100
+            
+            print(f"\n{name}:")
+            print(f"  Value: {latest_value}")
+            print(f"  Date: {period} {year}")
+            print(f"  Month-over-Month Change: {percentage_change:.2f}%")
+        
+    except Exception as e:
+        print(f"\nError fetching BLS data: {e}")
+    finally:
+        spinner.stop()
+    
+    input("\nPress Enter to continue...")
+
+def bls_menu():
+    """Display and handle BLS data menu"""
+    while True:
+        print("\n=== BLS Economic Indicators Menu ===")
+        print("1. View latest economic indicators")
+        print("2. Return to main menu")
+        
+        choice = input("\nEnter your choice (1-2): ")
+        
+        if choice == "1":
+            display_bls_data()
+        elif choice == "2":
+            return
+        else:
+            print("\nInvalid choice. Please enter 1-2.")
+
 def main_menu():
     """Display and handle main menu"""
     init_db()  # Ensure database exists
@@ -342,9 +419,10 @@ def main_menu():
         print("1. Weather Lookup")
         print("2. NFL Scores")
         print("3. News")
-        print("4. Quit")
+        print("4. BLS Economic Indicators")
+        print("5. Quit")
         
-        choice = input("\nEnter your choice (1-4): ")
+        choice = input("\nEnter your choice (1-5): ")
         
         if choice == "1":
             weather_menu()
@@ -353,10 +431,12 @@ def main_menu():
         elif choice == "3":
             news_menu()
         elif choice == "4":
+            bls_menu()
+        elif choice == "5":
             print("\nGoodbye!")
             sys.exit(0)
         else:
-            print("\nInvalid choice. Please enter 1-4.")
+            print("\nInvalid choice. Please enter 1-5.")
 
 if __name__ == "__main__":
     main_menu()
