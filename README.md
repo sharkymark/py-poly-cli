@@ -1,6 +1,6 @@
 # Multi-Service CLI Tool
 
-A command-line interface tool that provides various web service integrations including weather lookup, NFL scores, news aggregation, and economic indicators.
+A command-line interface tool that provides various web service integrations including weather lookup, NFL scores, news aggregation, economic indicators, and tide information.
 
 ## Features
 
@@ -23,8 +23,14 @@ A command-line interface tool that provides various web service integrations inc
 
 - BLS Economic Indicators
   - Retrieves key economic indicators from the BLS API
-  - Includes CPI, CPI less food and energy, PPI, PCE, Nonfarm payroll, Unemployment rate, Initial claims for unemployment insurance, and Retail sales
+  - Includes CPI, CPI less food and energy, PPI, Nonfarm payroll, and Unemployment rate
   - Displays data in a format preferred by financial analysts, including month-over-month changes and actual values
+
+- Tide Information
+  - Converts address to coordinates using Census Geocoding API
+  - Finds the nearest NOAA tide station
+  - Retrieves tide predictions from NOAA API
+  - Displays high and low tide times and types
 
 ## Installation
 
@@ -52,7 +58,8 @@ Navigate through the menus to:
 2. View live NFL scores and game information
 3. Browse latest news articles from specific domains
 4. View latest economic indicators from the BLS
-5. Exit the application
+5. Look up tide information by address
+6. Exit the application
 
 ## Resources
 
@@ -62,6 +69,7 @@ Navigate through the menus to:
 - [ESPN API](https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard) - NFL scores and game information
 - [Google News](https://news.google.com/) - News article aggregation
 - [BLS API](https://www.bls.gov/developers/) - Economic indicators data
+- [NOAA Tides and Currents API](https://tidesandcurrents.noaa.gov/api/) - Tide predictions
 
 ### Development
 - [DevContainer Specification](https://containers.dev/implementors/spec/) - Learn about DevContainer configuration
