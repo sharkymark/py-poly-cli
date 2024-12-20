@@ -1,6 +1,6 @@
 # Multi-Service CLI Tool
 
-A command-line interface tool that provides various web service integrations. Currently features weather lookup functionality using the U.S. Census Geocoding API and NOAA's National Weather Service API.
+A command-line interface tool that provides various web service integrations including weather lookup, NFL scores, and news aggregation.
 
 ## Features
 
@@ -9,6 +9,17 @@ A command-line interface tool that provides various web service integrations. Cu
   - Fetches detailed weather data from National Weather Service API
   - Stores recent lookups in local SQLite database
   - Generates Google Maps links for looked-up addresses
+
+- NFL Scores
+  - Real-time game scores from ESPN API
+  - Shows upcoming, in-progress, and completed games
+  - Displays current game period and score for live games
+
+- News Aggregation
+  - Fetches latest news articles using Google News
+  - Filter articles by specific domains (e.g., wsj.com)
+  - Displays article titles, publication dates, and URLs
+  - Limited to 5 most recent articles per query
 
 ## Installation
 
@@ -32,15 +43,18 @@ python3 poly_cli.py
 If using a dev container, the application is started automatically.
 
 Navigate through the menus to:
-1. Look up weather for a new address
-2. Select from recently looked-up addresses
-3. View current conditions and forecasts
+1. Look up weather for a new address or select from recent lookups
+2. View live NFL scores and game information
+3. Browse latest news articles from specific domains
+4. Exit the application
 
 ## Resources
 
 ### APIs Used
 - [Census Geocoding Services](https://geocoding.geo.census.gov/geocoder/Geocoding_Services_API.html) - Convert addresses to coordinates
 - [National Weather Service API](https://www.weather.gov/documentation/services-web-api) - Weather data and forecasts
+- [ESPN API](https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard) - NFL scores and game information
+- [Google News](https://news.google.com/) - News article aggregation
 
 ### Development
 - [DevContainer Specification](https://containers.dev/implementors/spec/) - Learn about DevContainer configuration
