@@ -208,23 +208,90 @@ def weather_menu():
         else:
             print("\nInvalid choice. Please enter 1-3.")
 
+def get_nfl_scores():
+    """Fetch NFL scores from ESPN API"""
+    spinner = Halo('Getting NFL scores...')
+    spinner.start()
+    try:
+        url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        
+        if not data.get('events'):
+            print("\nNo NFL games found.")
+            return
+        
+        print("\nNFL Scores:")
+        print("-" * 50)
+        
+        for event in data['events']:
+            game_status = event['status']['type']['state']
+            competition = event['competitions'][0]
+            home_team = competition['competitors'][0]
+            away_team = competition['competitors'][1]
+            
+            # Format based on game status
+            if game_status == 'pre':
+                game_time = event['status']['type']['shortDetail']
+                print(f"{away_team['team']['displayName']} @ {home_team['team']['displayName']}")
+                print(f"Starting: {game_time}")
+            else:
+                home_score = home_team['score']
+                away_score = away_team['score']
+                
+                if game_status == 'in':
+                    period = event['status']['type']['shortDetail']
+                    print(f"{away_team['team']['displayName']} {away_score} @ {home_team['team']['displayName']} {home_score}")
+                    print(f"Current: {period}")
+                else:  # post-game
+                    print(f"Final: {away_team['team']['displayName']} {away_score} @ {home_team['team']['displayName']} {home_score}")
+            
+            print("-" * 50)
+        
+    except Exception as e:
+        print(f"\nError getting NFL scores: {e}")
+    finally:
+        spinner.stop()
+    
+    input("\nPress Enter to continue...")
+
+def nfl_menu():
+    """Display and handle NFL scores menu"""
+    while True:
+        print("\n=== NFL Scores Menu ===")
+        print("1. View latest scores")
+        print("2. Return to main menu")
+        
+        choice = input("\nEnter your choice (1-2): ")
+        
+        if choice == "1":
+            get_nfl_scores()
+        elif choice == "2":
+            return
+        else:
+            print("\nInvalid choice. Please enter 1-2.")
+
 def main_menu():
     """Display and handle main menu"""
     init_db()  # Ensure database exists
     while True:
         print("\n=== Multi-Service CLI Tool ===")
         print("1. Weather Lookup")
-        print("2. Quit")
+        print("2. NFL Scores")
+        print("3. Quit")
         
-        choice = input("\nEnter your choice (1-2): ")
+        choice = input("\nEnter your choice (1-3): ")
         
         if choice == "1":
             weather_menu()
         elif choice == "2":
+            nfl_menu()
+        elif choice == "3":
             print("\nGoodbye!")
             sys.exit(0)
         else:
-            print("\nInvalid choice. Please enter 1-2.")
+            print("\nInvalid choice. Please enter 1-3.")
 
 if __name__ == "__main__":
     main_menu()
