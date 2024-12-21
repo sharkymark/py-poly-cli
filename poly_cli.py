@@ -10,6 +10,13 @@ import os
 from gnews import GNews
 import json
 import math
+from simple_salesforce import Salesforce, SalesforceAuthenticationFailed, SalesforceExpiredSession
+
+# Global variables to store Salesforce credentials
+sf_username = None
+sf_password = None
+sf_token = None
+sf_instance = None
 
 def init_db():
     conn = sqlite3.connect('weather_history.db')
@@ -582,6 +589,76 @@ def tides_menu():
         else:
             print("\nInvalid choice. Please enter 1-2.")
 
+def get_salesforce_credentials():
+    """Prompt the user for Salesforce credentials and verify them"""
+    global sf_username, sf_password, sf_token, sf_instance
+
+    if sf_instance is not None:
+            return sf_instance
+
+    while True:
+        sf_username = input("Enter Salesforce username: ")
+        sf_password = input("Enter Salesforce password: ")
+        sf_token = input("Enter Salesforce security token: ")
+        
+        try:
+            sf_instance = Salesforce(username=sf_username, password=sf_password, security_token=sf_token)
+            print("\nSalesforce credentials verified successfully.\n")
+            return sf_instance
+        except SalesforceAuthenticationFailed:
+            print("\nInvalid Salesforce credentials. Please try again.\n")
+
+def query_salesforce_contacts(sf, filter_value):
+    query = f"""
+    SELECT Account.Name, FirstName, LastName, Title, Email, Phone, Description
+    FROM Contact
+    WHERE Account.Name LIKE '%{filter_value}%'
+    OR FirstName LIKE '%{filter_value}%'
+    OR LastName LIKE '%{filter_value}%'
+    OR Title LIKE '%{filter_value}%'
+    OR Email LIKE '%{filter_value}%'
+    """
+    
+    try:
+        contacts = sf.query(query)['records']
+    except SalesforceExpiredSession:
+        print("\nSalesforce session expired. Please re-enter your credentials.")
+        get_salesforce_credentials()
+        contacts = sf.query(query)['records']
+
+    if not contacts:
+        print("\nNo contacts found.\n")
+    else:
+        print(f"\nTotal contacts found: {len(contacts)}")
+        for contact in contacts:
+            print(f"\nAccount Name: {contact['Account']['Name']}")
+            print(f"First Name: {contact['FirstName']}")
+            print(f"Last Name: {contact['LastName']}")
+            print(f"Title: {contact['Title']}")
+            print(f"Email: {contact['Email']}")
+            print(f"Phone: {contact['Phone']}")
+            print(f"Description: {contact['Description']}")
+            print("-" * 60)
+        print(f"\nTotal contacts found: {len(contacts)}\n")
+
+def salesforce_menu():
+    """Display and handle Salesforce menu"""
+    print("\n=== Salesforce Menu ===\n")
+    sf = get_salesforce_credentials()
+    while True:
+        print("1. Query contacts")
+        print("2. Return to main menu")
+        
+        choice = input("\nEnter your choice (1-2): ")
+        
+        if choice == "1":
+            filter_value = input("\nEnter filter value: ")
+            query_salesforce_contacts(sf, filter_value)
+        elif choice == "2":
+            return
+        else:
+            print("\nInvalid choice. Please enter 1-2.")
+
 def main_menu():
     """Display and handle main menu"""
     init_db()  # Ensure database exists
@@ -592,7 +669,8 @@ def main_menu():
         print("3. News")
         print("4. BLS Economic Indicators")
         print("5. Tides")
-        print("6. Quit")
+        print("6. Salesforce")
+        print("7. Quit")
         
         choice = input("\nEnter your choice (1-6): ")
         
@@ -607,6 +685,8 @@ def main_menu():
         elif choice == "5":
             tides_menu()
         elif choice == "6":
+            salesforce_menu()
+        elif choice == "7":
             print("\nGoodbye!")
             sys.exit(0)
         else:
