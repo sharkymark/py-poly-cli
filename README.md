@@ -32,6 +32,10 @@ A command-line interface tool that provides various web service integrations inc
   - Retrieves tide predictions from NOAA API
   - Displays high and low tide times and types
 
+- Querying Salesforce contacts
+  - Prompts for username, password, and personal token
+  - Retrieves contact records based on filter criteria
+
 ## Installation
 
 This project uses DevContainers for development. To get started:
@@ -70,6 +74,8 @@ Navigate through the menus to:
 - [Google News](https://news.google.com/) - News article aggregation
 - [BLS API](https://www.bls.gov/developers/) - Economic indicators data
 - [NOAA Tides and Currents API](https://tidesandcurrents.noaa.gov/api/) - Tide predictions
+- [simple_salesforce](https://pypi.org/project/simple-salesforce/) - A basic Salesforce.com REST API client for Python.
+- [GitHub Repository](https://github.com/simple-salesforce/simple-salesforce)
 
 ### Development
 - [DevContainer Specification](https://containers.dev/implementors/spec/) - Learn about DevContainer configuration
