@@ -8,7 +8,9 @@
         "vscode": {
             "extensions": [
                 "ms-python.python",
-                "ms-python.vscode-pylance"
+                "ms-python.vscode-pylance",
+                "saoudrizwan.claude-dev",
+                "continue.continue"
             ],
             "settings": {
                 "python.defaultInterpreterPath": "/usr/local/bin/python3",
@@ -17,6 +19,9 @@
             }
         }
     },
+    "runArgs": [
+        "--add-host=host.docker.internal:host-gateway"
+    ],
     "postStartCommand": "python3 poly_cli.py",
     "remoteUser": "root"
 } 
