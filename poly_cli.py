@@ -78,7 +78,6 @@ def get_weather(lat, lon):
     try:
         # First, get the grid coordinates
         point_url = f"https://api.weather.gov/points/{lat},{lon}"
-        print(point_url)
         response = requests.get(point_url)
         response.raise_for_status()
         grid_data = response.json()
