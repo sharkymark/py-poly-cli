@@ -1,6 +1,6 @@
 # Multi-Service CLI Tool
 
-A command-line interface tool that provides various web service integrations including weather lookup, NFL scores, news aggregation, economic indicators, and tide information.
+A command-line interface tool that provides various web service integrations including weather lookup, NFL scores, news aggregation, economic indicators, tide information, and earthquake data.
 
 ## Features
 
@@ -36,6 +36,11 @@ A command-line interface tool that provides various web service integrations inc
   - Prompts for username, password, and personal token
   - Retrieves contact records based on filter criteria
 
+- Earthquake Information
+  - Retrieves last 24 hours 5.0 earthquake data from the USGS Earthquake API
+  - Displays earthquake magnitude, location, and time
+  - Filters results by minimum magnitude and time range
+
 ## Installation
 
 This project uses DevContainers for development. To get started:
@@ -63,7 +68,8 @@ Navigate through the menus to:
 3. Browse latest news articles from specific domains
 4. View latest economic indicators from the BLS
 5. Look up tide information by address
-6. Exit the application
+6. View recent earthquake information
+7. Exit the application
 
 ## Resources
 
@@ -76,6 +82,7 @@ Navigate through the menus to:
 - [NOAA Tides and Currents API](https://tidesandcurrents.noaa.gov/api/) - Tide predictions
 - [simple_salesforce](https://pypi.org/project/simple-salesforce/) - A basic Salesforce.com REST API client for Python.
 - [GitHub Repository](https://github.com/simple-salesforce/simple-salesforce)
+- [USGS Earthquake API](https://earthquake.usgs.gov/fdsnws/event/1/) - Recent earthquake data
 
 ### Development
 - [DevContainer Specification](https://containers.dev/implementors/spec/) - Learn about DevContainer configuration

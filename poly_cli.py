@@ -659,6 +659,59 @@ def salesforce_menu():
         else:
             print("\nInvalid choice. Please enter 1-2.")
 
+def get_google_maps_url_for_coordinates(lat, lon):
+    """Generate Google Maps URL for the given coordinates"""
+    return f"https://www.google.com/maps/@?api=1&map_action=map&center={lat},{lon}&zoom=10"
+
+def earthquakes_menu():
+    """Display 5.0 and higher magnitude earthquakes today"""
+    # https://earthquake.usgs.gov/fdsnws/event/1/
+    # https://earthquake.usgs.gov/fdsnws/event/1/#parameters
+
+
+    spinner = Halo('Getting USGS data...')
+    spinner.start()
+    try:
+        # Get the current date in YYYY-MM-DD format
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        # Get the date one day before today
+        start_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        # Insert the current date into the URL
+        url = f"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime={start_date}&endtime={current_date}&minmagnitude=5"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        
+        if not data.get('features'):
+            print("\nNo 5.0 earthquakes found today.")
+            return
+        
+        print("\n5.0 earthquakes today:")
+        print("-" * 50)
+        
+        for feature in data['features']:
+            properties = feature['properties']
+            mag = properties['mag']
+            place = properties['place']
+            time = datetime.utcfromtimestamp(properties['time'] / 1000).strftime('%Y-%m-%d %H:%M:%S UTC')
+            coordinates = feature['geometry']['coordinates']
+            lon, lat = coordinates[0], coordinates[1]
+            maps_url = get_google_maps_url_for_coordinates(lat, lon)
+
+            print(f"Magnitude: {mag}")
+            print(f"Place: {place}")
+            print(f"Time: {time}")
+            print(f"Google Maps URL: {maps_url}")
+            print("-" * 50)
+        
+    except Exception as e:
+        print(f"\nError getting earthquake data: {e}")
+    finally:
+        spinner.stop()
+    
+    input("\nPress Enter to continue...")
+
 def main_menu():
     """Display and handle main menu"""
     init_db()  # Ensure database exists
@@ -670,7 +723,8 @@ def main_menu():
         print("4. BLS Economic Indicators")
         print("5. Tides")
         print("6. Salesforce")
-        print("7. Quit")
+        print("7. Earthquakes")
+        print("8. Quit")
         
         choice = input("\nEnter your choice (1-6): ")
         
@@ -687,6 +741,8 @@ def main_menu():
         elif choice == "6":
             salesforce_menu()
         elif choice == "7":
+            earthquakes_menu()
+        elif choice == "8":
             print("\nGoodbye!")
             sys.exit(0)
         else:
