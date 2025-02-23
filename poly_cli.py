@@ -661,7 +661,8 @@ def salesforce_menu():
 
 def get_google_maps_url_for_coordinates(lat, lon):
     """Generate Google Maps URL for the given coordinates"""
-    return f"https://www.google.com/maps/@?api=1&map_action=map&center={lat},{lon}&zoom=10"
+
+    return f"https://www.google.com/maps/place/{lat},{lon}/@{lat},{lon},7z/data=!3m1!1e3"
 
 def earthquakes_menu():
     """Display 5.0 and higher magnitude earthquakes today"""
@@ -694,7 +695,7 @@ def earthquakes_menu():
             properties = feature['properties']
             mag = properties['mag']
             place = properties['place']
-            time = datetime.utcfromtimestamp(properties['time'] / 1000).strftime('%Y-%m-%d %H:%M:%S UTC')
+            time = datetime.fromtimestamp(properties['time'] / 1000).strftime('%Y-%m-%d %H:%M:%S UTC')
             coordinates = feature['geometry']['coordinates']
             lon, lat = coordinates[0], coordinates[1]
             maps_url = get_google_maps_url_for_coordinates(lat, lon)
