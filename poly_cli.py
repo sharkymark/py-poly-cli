@@ -673,8 +673,8 @@ def earthquakes_menu():
     spinner = Halo('Getting USGS data...')
     spinner.start()
     try:
-        # Get the current date in YYYY-MM-DD format
-        current_date = datetime.now().strftime("%Y-%m-%d")
+        # Get the current date one day in the future in YYYY-MM-DD format
+        current_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         # Get the date one day before today
         start_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -690,6 +690,7 @@ def earthquakes_menu():
         
         print("\n5.0 earthquakes today:")
         print("-" * 50)
+        print(f"\nUSGS URL: {url}\n")
         
         for feature in data['features']:
             properties = feature['properties']
