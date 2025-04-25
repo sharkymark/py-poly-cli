@@ -1,8 +1,9 @@
 {
-    "name": "Weather CLI",
+    "name": "Poly Python CLI",
     "build": {
         "dockerfile": "Dockerfile",
-        "context": ".."
+        "context": "..",
+
     },
     "customizations": {
         "vscode": {
@@ -19,9 +20,7 @@
             }
         }
     },
-    "runArgs": [
-        "--add-host=host.docker.internal:host-gateway"
-    ],
-    "postStartCommand": "python3 poly_cli.py",
-    "remoteUser": "root"
+
+
+    "postStartCommand": "python3 poly_cli.py"
 } 
