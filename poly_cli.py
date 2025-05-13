@@ -382,7 +382,8 @@ def display_bls_data():
             "CPI Less Food and Energy": "CUSR0000SA0L1E",
             "PPI": "PCUOMFG--OMFG--",
             "Nonfarm Payroll": "CES0000000001",
-            "Unemployment Rate": "LNS14000000"
+            "Unemployment Rate": "LNS14000000",
+            "Employment in Residential Construction": "CES2023610001"
         }
         
         for name, series_id in series_ids.items():
