@@ -841,7 +841,11 @@ def display_fred_indicators():
             "Gross Domestic Product (Billions of $)": "GDP",
             "CPI All Urban Consumers (Index 1982-84=100)": "CPIAUCSL",
             "Civilian Unemployment Rate (%)": "UNRATE",
-            "30-Year Fixed Rate Mortgage Average (%)": "MORTGAGE30US"
+            "30-Year Fixed Rate Mortgage Average (%)": "MORTGAGE30US",
+            "Housing Starts (Thousands of Units)": "HOUST",
+            "Consumer Sentiment (U. Michigan)": "UMCSENT",
+            "Initial Claims (Weekly)": "ICSA",
+            "S&P/Case-Shiller U.S. Home Price Index": "CSUSHPINSA"
         }
         
         for name, series_id in series_ids.items():
@@ -878,7 +882,7 @@ def display_fred_indicators():
                     'previous_date': previous_data['date'],
                     'previous_value': previous_value,
                     'change': change,
-                    'is_percentage_change': series_id in ["M2SL", "INDPRO", "GDP", "CPIAUCSL"]
+                    'is_percentage_change': series_id in ["M2SL", "INDPRO", "GDP", "CPIAUCSL", "HOUST", "CSUSHPINSA"]
                 }
                 fetched_results.append(result_item)
             except requests.exceptions.HTTPError as item_e: # Catch error per item
