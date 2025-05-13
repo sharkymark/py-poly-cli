@@ -688,7 +688,7 @@ def get_salesforce_credentials():
             spinner.fail(f"An unexpected error occurred during Salesforce authentication: {e}")
             return None
         finally:
-            if 'spinner' in locals() and spinner.is_active:
+            if 'spinner' in locals():
                 spinner.stop()
     else:
         print("\nSalesforce credentials not found in environment variables.")
