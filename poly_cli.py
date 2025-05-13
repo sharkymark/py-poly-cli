@@ -807,6 +807,103 @@ def earthquakes_menu():
     
     input("\nPress Enter to continue...")
 
+def get_fred_data(series_id, api_key):
+    """Fetch data from FRED API for a given series ID."""
+    # Request the last 2 observations, sorted in descending order by date
+    url = f"https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={api_key}&file_type=json&sort_order=desc&limit=2"
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
+
+def display_fred_indicators():
+    """Display economic indicators from FRED API."""
+    api_key = os.getenv("FRED_API_KEY")
+    if not api_key:
+        print("\nError: FRED_API_KEY environment variable not set.")
+        print("Please set it to your FRED API key to use this feature.")
+        print("You can obtain a key from: https://fred.stlouisfed.org/docs/api/api_key.html")
+        input("\nPress Enter to continue...")
+        return
+
+    spinner = Halo('Fetching Federal Reserve indicators...')
+    spinner.start()
+    
+    try:
+        series_ids = {
+            "Effective Federal Funds Rate": "FEDFUNDS",
+            "10-Year Treasury Constant Maturity Rate": "DGS10",
+            "M2 Money Stock (Billions of $)": "M2SL",
+            "Industrial Production Index (2017=100)": "INDPRO"
+        }
+        
+        print("\n--- Federal Reserve Economic Indicators ---")
+        for name, series_id in series_ids.items():
+            data = get_fred_data(series_id, api_key)
+            observations = data.get('observations', [])
+            
+            if len(observations) < 2:
+                print(f"\n{name}: Not enough data available.")
+                continue
+            
+            latest_data = observations[0]
+            previous_data = observations[1]
+            
+            # FRED API sometimes returns '.' for value if data is not available
+            if latest_data['value'] == '.' or previous_data['value'] == '.':
+                print(f"\n{name}: Data point missing for latest or previous period.")
+                print(f"  Latest ({latest_data['date']}): {latest_data['value']}")
+                print(f"  Previous ({previous_data['date']}): {previous_data['value']}")
+                continue
+
+            latest_value = float(latest_data['value'])
+            previous_value = float(previous_data['value'])
+            
+            print(f"\n{name}:")
+            print(f"  Latest Value ({latest_data['date']}): {latest_value}")
+            
+            change = latest_value - previous_value
+            
+            if series_id in ["M2SL", "INDPRO"]: # For M2 and INDPRO, show percentage change
+                if previous_value != 0:
+                    percentage_change = (change / previous_value) * 100
+                    print(f"  Change from Previous ({previous_data['date']}): {percentage_change:+.2f}% (from {previous_value})")
+                else:
+                    print(f"  Change from Previous ({previous_data['date']}): N/A (previous value was 0)")
+            else: # For rates, show absolute change
+                print(f"  Change from Previous ({previous_data['date']}): {change:+.2f} (from {previous_value})")
+                
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 400: # Often API key issue or bad request
+             try:
+                error_detail = e.response.json()
+                print(f"\nError fetching FRED data: {e} - {error_detail.get('error_message', 'No additional details.')}")
+             except json.JSONDecodeError:
+                print(f"\nError fetching FRED data: {e} - Could not parse error response.")
+        else:
+            print(f"\nError fetching FRED data: {e}")
+    except Exception as e:
+        print(f"\nAn unexpected error occurred: {e}")
+    finally:
+        spinner.stop()
+    
+    input("\nPress Enter to continue...")
+
+def fred_menu():
+    """Display and handle FRED data menu"""
+    while True:
+        print("\n=== US Federal Reserve Indicators Menu ===")
+        print("1. View latest Federal Reserve indicators")
+        print("2. Return to main menu")
+        
+        choice = input("\nEnter your choice (1-2): ")
+        
+        if choice == "1":
+            display_fred_indicators()
+        elif choice == "2":
+            return
+        else:
+            print("\nInvalid choice. Please enter 1-2.")
+
 def main_menu():
     """Display and handle main menu"""
     init_db()  # Ensure database exists
@@ -819,9 +916,10 @@ def main_menu():
         print("5. Tides")
         print("6. Salesforce")
         print("7. Earthquakes")
-        print("8. Quit")
+        print("8. US Federal Reserve Indicators")
+        print("9. Quit")
         
-        choice = input("\nEnter your choice (1-6): ")
+        choice = input("\nEnter your choice (1-9): ")
         
         if choice == "1":
             weather_menu()
@@ -838,10 +936,12 @@ def main_menu():
         elif choice == "7":
             earthquakes_menu()
         elif choice == "8":
+            fred_menu()
+        elif choice == "9":
             print("\nGoodbye!")
             sys.exit(0)
         else:
-            print("\nInvalid choice. Please enter 1-6.")
+            print("\nInvalid choice. Please enter 1-9.")
 
 if __name__ == "__main__":
     main_menu()
