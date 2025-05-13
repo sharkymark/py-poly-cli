@@ -509,6 +509,13 @@ def display_station_info(station_info):
     print("Google Maps:")
     print(google_maps_url)
 
+def get_station_info(station_id):
+    """Fetch station information from NOAA API"""
+    url = f"https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/{station_id}.json"
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
+
 def lookup_tides():
     """Handle tide lookup logic"""
     address = input("\nEnter address (street, city, state, zip code): ")
@@ -801,10 +808,3 @@ def main_menu():
 
 if __name__ == "__main__":
     main_menu()
-
-def get_station_info(station_id):
-    """Fetch station information from NOAA API"""
-    url = f"https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/{station_id}.json"
-    response = requests.get(url)
-    response.raise_for_status()
-    return response.json()
