@@ -6,6 +6,7 @@ from datetime import datetime
 from datetime import datetime, timedelta
 import sqlite3
 from dateutil import parser
+import sqlite3 # Ensure sqlite3 is imported to use its constants
 import os
 from gnews import GNews
 import json
@@ -18,8 +19,20 @@ sf_password = None
 sf_token = None
 sf_instance = None
 
+# Adapters for storing and retrieving datetime objects with SQLite
+def adapt_datetime_iso(val):
+    """Adapt datetime.datetime to ISO 8601 string."""
+    return val.isoformat()
+
+def convert_datetime_iso(val):
+    """Convert ISO 8601 string to datetime.datetime object."""
+    return datetime.fromisoformat(val.decode())
+
+sqlite3.register_adapter(datetime, adapt_datetime_iso)
+sqlite3.register_converter("DATETIME", convert_datetime_iso)
+
 def init_db():
-    conn = sqlite3.connect('weather_history.db')
+    conn = sqlite3.connect('weather_history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS searches
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +45,7 @@ def init_db():
     conn.close()
 
 def save_search(address, location_data):
-    conn = sqlite3.connect('weather_history.db')
+    conn = sqlite3.connect('weather_history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
     c = conn.cursor()
     c.execute('''INSERT INTO searches (address, matched_address, lat, lon, timestamp)
                  VALUES (?, ?, ?, ?, ?)''',
@@ -161,7 +174,7 @@ def lookup_weather():
         save_search(address, location_data)
 
 def get_saved_addresses():
-    conn = sqlite3.connect('weather_history.db')
+    conn = sqlite3.connect('weather_history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
     c = conn.cursor()
     c.execute('''SELECT DISTINCT address, matched_address, lat, lon, MAX(timestamp) as latest
                  FROM searches 
@@ -369,7 +382,8 @@ def display_bls_data():
             "CPI Less Food and Energy": "CUSR0000SA0L1E",
             "PPI": "PCUOMFG--OMFG--",
             "Nonfarm Payroll": "CES0000000001",
-            "Unemployment Rate": "LNS14000000"
+            "Unemployment Rate": "LNS14000000",
+            "Employment in Residential Construction": "CES2023610001"
         }
         
         for name, series_id in series_ids.items():
@@ -489,26 +503,15 @@ def get_tide_data(station_id):
 def display_tide_data(tide_data):
     """Display tide information"""
     print("\nTide Information:")
-    print("-" * 50)
     for prediction in tide_data['predictions']:
-        time = prediction['t']
-        tide_type = prediction['type']
-        print(f"Time: {time}, Tide: {tide_type}")
-    print("-" * 50)
-
-def get_station_info(station_id):
-    """Fetch station information from NOAA API"""
-    url = f"https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/{station_id}.json"
-    response = requests.get(url)
-    response.raise_for_status()
-    return response.json()
+        time = datetime.strptime(prediction['t'], "%Y-%m-%d %H:%M")
+        tide_type = "High Tide" if prediction['type'] == "H" else "Low Tide"
+        formatted_time = time.strftime("%I:%M %p, %A, %B %d, %Y")
+        print(f"{formatted_time} - {tide_type}")
 
 def display_station_info(station_info):
     """Display station information"""
     print("\nStation Information:")
-    print("-" * 50)
-    
-    # Access the correct keys in the station_info dictionary
     print(f"Station ID: {station_info['stations'][0]['id']}")
     print(f"Station Name: {station_info['stations'][0]['name']}")
     print(f"State: {station_info['stations'][0]['state']}")
@@ -517,9 +520,15 @@ def display_station_info(station_info):
 
     # Generate Google Maps URL
     google_maps_url = f"https://www.google.com/maps/@?api=1&map_action=map&center={station_info['stations'][0]['lat']},{station_info['stations'][0]['lng']}&zoom=15"
+    print("Google Maps:")
+    print(google_maps_url)
 
-    print(f"\nClick to view station location on Google Maps: {google_maps_url}")
-    print("-" * 50)
+def get_station_info(station_id):
+    """Fetch station information from NOAA API"""
+    url = f"https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/{station_id}.json"
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
 
 def lookup_tides():
     """Handle tide lookup logic"""
@@ -566,6 +575,8 @@ def lookup_tides():
     # Get tide data
     try:
         tide_data = get_tide_data(station_id)
+        # Save the address to the database since we successfully got tide data
+        save_search(address, location_data)
     except requests.exceptions.HTTPError as e:
         print(f"\nError: Failed to retrieve tide data. {e}")
         return
@@ -573,40 +584,117 @@ def lookup_tides():
     # Display tide data
     display_tide_data(tide_data)
 
+def select_saved_address_for_tides():
+    """Handle selecting a saved address for tide lookup"""
+    addresses = get_saved_addresses()
+    if not addresses:
+        print("\nNo saved addresses found.")
+        return
+    
+    print("\nSaved addresses:")
+    for i, (address, matched_address, lat, lon, _) in enumerate(addresses, 1):
+        print(f"{i}. {matched_address}")
+    
+    choice = input("\nSelect address number (or 0 to go back): ")
+    try:
+        choice = int(choice)
+        if choice == 0:
+            return
+        if 1 <= choice <= len(addresses):
+            _, matched_address, lat, lon, _ = addresses[choice-1]
+            location_data = {
+                'matched_address': matched_address,
+                'lat': lat,
+                'lon': lon
+            }
+            
+            # Get nearest station
+            station_id = get_nearest_station(location_data)
+            
+            if station_id is None:
+                print("\nError: Could not find a nearby tide station.")
+                return
+            
+            # Get station information
+            station_info = get_station_info(station_id)
+            
+            if station_info is None:
+                print("\nError: Could not retrieve station information.")
+                return
+            
+            # Display station information
+            display_station_info(station_info)
+            
+            # Get tide data
+            try:
+                tide_data = get_tide_data(station_id)
+                # Display tide data
+                display_tide_data(tide_data)
+            except requests.exceptions.HTTPError as e:
+                print(f"\nError: Failed to retrieve tide data. {e}")
+                return
+            
+            input("\nPress Enter to continue...")
+        else:
+            print("\nInvalid selection.")
+    except ValueError:
+        print("\nPlease enter a valid number.")
+
 def tides_menu():
     """Display and handle tides menu"""
     while True:
         print("\n=== Tides Menu ===")
-        print("1. Look up tides by address")
-        print("2. Return to main menu")
+        print("1. Enter new address")
+        print("2. Select from saved addresses")
+        print("3. Return to main menu")
         
-        choice = input("\nEnter your choice (1-2): ")
+        choice = input("\nEnter your choice (1-3): ")
         
         if choice == "1":
             lookup_tides()
         elif choice == "2":
+            select_saved_address_for_tides()
+        elif choice == "3":
             return
         else:
-            print("\nInvalid choice. Please enter 1-2.")
+            print("\nInvalid choice. Please enter 1-3.")
 
 def get_salesforce_credentials():
     """Prompt the user for Salesforce credentials and verify them"""
     global sf_username, sf_password, sf_token, sf_instance
 
     if sf_instance is not None:
-            return sf_instance
+        return sf_instance
 
-    while True:
-        sf_username = input("Enter Salesforce username: ")
-        sf_password = input("Enter Salesforce password: ")
-        sf_token = input("Enter Salesforce security token: ")
-        
+    sf_username_env = os.getenv("SALESFORCE_USERNAME")
+    sf_password_env = os.getenv("SALESFORCE_PASSWORD")
+    sf_token_env = os.getenv("SALESFORCE_SECURITY_TOKEN")
+
+    if sf_username_env and sf_password_env and sf_token_env:
+        spinner = Halo('Authenticating with Salesforce using environment variables...')
+        spinner.start()
         try:
-            sf_instance = Salesforce(username=sf_username, password=sf_password, security_token=sf_token)
-            print("\nSalesforce credentials verified successfully.\n")
+            sf_instance = Salesforce(username=sf_username_env, password=sf_password_env, security_token=sf_token_env)
+            spinner.succeed("Salesforce authentication successful using environment variables.")
+            # Store them globally if needed, or just use the instance
+            sf_username = sf_username_env
+            sf_password = sf_password_env # Not strictly necessary to store if only instance is used
+            sf_token = sf_token_env       # Not strictly necessary to store if only instance is used
             return sf_instance
         except SalesforceAuthenticationFailed:
-            print("\nInvalid Salesforce credentials. Please try again.\n")
+            spinner.fail("Salesforce authentication failed using environment variables.")
+            print("Please check your SALESFORCE_USERNAME, SALESFORCE_PASSWORD, and SALESFORCE_SECURITY_TOKEN environment variables.")
+            return None
+        except Exception as e:
+            spinner.fail(f"An unexpected error occurred during Salesforce authentication: {e}")
+            return None
+        finally:
+            if 'spinner' in locals():
+                spinner.stop()
+    else:
+        print("\nSalesforce credentials not found in environment variables.")
+        print("Please set SALESFORCE_USERNAME, SALESFORCE_PASSWORD, and SALESFORCE_SECURITY_TOKEN.")
+        return None
 
 def query_salesforce_contacts(sf, filter_value):
     query = f"""
@@ -645,8 +733,13 @@ def salesforce_menu():
     """Display and handle Salesforce menu"""
     print("\n=== Salesforce Menu ===\n")
     sf = get_salesforce_credentials()
+
+    if sf is None:
+        input("\nPress Enter to return to the main menu...")
+        return
+
     while True:
-        print("1. Query contacts")
+        print("\n1. Query contacts")
         print("2. Return to main menu")
         
         choice = input("\nEnter your choice (1-2): ")
@@ -714,6 +807,172 @@ def earthquakes_menu():
     
     input("\nPress Enter to continue...")
 
+def get_fred_data(series_id, api_key):
+    """Fetch data from FRED API for a given series ID."""
+    # Request the last 2 observations, sorted in descending order by date
+    url = f"https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={api_key}&file_type=json&sort_order=desc&limit=2"
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
+
+def display_fred_indicators():
+    """Display economic indicators from FRED API."""
+    api_key = os.getenv("FRED_API_KEY")
+    if not api_key:
+        print("\nError: FRED_API_KEY environment variable not set.")
+        print("Please set it to your FRED API key to use this feature.")
+        print("You can obtain a key from: https://fred.stlouisfed.org/docs/api/api_key.html")
+        input("\nPress Enter to continue...")
+        return
+
+    spinner = Halo('Fetching Federal Reserve indicators...')
+    spinner.start()
+    
+    fetched_results = []
+    overall_success = True
+    api_error_message = ""
+
+    try:
+        series_ids = {
+            "Effective Federal Funds Rate": "FEDFUNDS",
+            "10-Year Treasury Constant Maturity Rate": "DGS10",
+            "M2 Money Stock (Billions of $)": "M2SL",
+            "Industrial Production Index (2017=100)": "INDPRO",
+            "Gross Domestic Product (Billions of $)": "GDP",
+            "CPI All Urban Consumers (Index 1982-84=100)": "CPIAUCSL",
+            "Civilian Unemployment Rate (%)": "UNRATE",
+            "30-Year Fixed Rate Mortgage Average (%)": "MORTGAGE30US",
+            "Housing Starts (Thousands of Units)": "HOUST",
+            "Consumer Sentiment (U. Michigan)": "UMCSENT",
+            "Initial Claims (Weekly)": "ICSA",
+            "S&P/Case-Shiller U.S. Home Price Index": "CSUSHPINSA"
+        }
+        
+        for name, series_id in series_ids.items():
+            try:
+                data = get_fred_data(series_id, api_key) # Network call
+                observations = data.get('observations', [])
+                
+                if len(observations) < 2:
+                    fetched_results.append({'name': name, 'error': "Not enough data available."})
+                    continue
+                
+                latest_data = observations[0]
+                previous_data = observations[1]
+                
+                if latest_data['value'] == '.' or previous_data['value'] == '.':
+                    fetched_results.append({
+                        'name': name, 
+                        'error': "Data point missing for latest or previous period.",
+                        'latest_date': latest_data['date'],
+                        'latest_value_raw': latest_data['value'],
+                        'previous_date': previous_data['date'],
+                        'previous_value_raw': previous_data['value']
+                    })
+                    continue
+
+                latest_value = float(latest_data['value'])
+                previous_value = float(previous_data['value'])
+                change = latest_value - previous_value
+                
+                result_item = {
+                    'name': name,
+                    'latest_date': latest_data['date'],
+                    'latest_value': latest_value,
+                    'previous_date': previous_data['date'],
+                    'previous_value': previous_value,
+                    'change': change,
+                    'is_percentage_change': series_id in ["M2SL", "INDPRO", "GDP", "CPIAUCSL", "HOUST", "CSUSHPINSA"]
+                }
+                fetched_results.append(result_item)
+            except requests.exceptions.HTTPError as item_e: # Catch error per item
+                error_detail_msg = str(item_e)
+                if item_e.response is not None and item_e.response.status_code == 400:
+                    try:
+                        error_detail = item_e.response.json()
+                        error_detail_msg = f"{item_e} - {error_detail.get('error_message', 'No additional details.')}"
+                    except json.JSONDecodeError:
+                        pass # Keep original error_detail_msg
+                fetched_results.append({'name': name, 'error': f"Failed to fetch: {error_detail_msg}"})
+            except Exception as item_e: # Catch other errors per item
+                 fetched_results.append({'name': name, 'error': f"An unexpected error occurred: {item_e}"})
+
+
+    except requests.exceptions.HTTPError as e: # General error, e.g. initial API key problem
+        overall_success = False
+        if e.response is not None and e.response.status_code == 400:
+             try:
+                error_detail = e.response.json()
+                api_error_message = f"API Error: {e} - {error_detail.get('error_message', 'No additional details.')}"
+             except json.JSONDecodeError:
+                api_error_message = f"API Error: {e} - Could not parse error response."
+        else:
+            api_error_message = f"HTTP Error: {e}"
+    except Exception as e:
+        overall_success = False
+        api_error_message = f"An unexpected error occurred: {e}"
+    
+    # Determine spinner final state
+    if not overall_success:
+        spinner.fail(api_error_message or "Failed to fetch Federal Reserve indicators due to an unexpected error.")
+    elif not fetched_results:
+        spinner.warn("No data could be retrieved for the selected indicators.")
+    else:
+        num_errors = sum(1 for item in fetched_results if 'error' in item)
+        if num_errors == len(fetched_results):
+            spinner.warn("Could not retrieve data for any of the selected indicators.")
+        elif num_errors > 0:
+            spinner.warn("Fetched some indicators, but encountered errors with others.")
+        else:
+            spinner.succeed("Fetched Federal Reserve indicators successfully.")
+
+    # Print results after spinner is done
+    print("\n--- Federal Reserve Economic Indicators ---")
+    if not overall_success and not fetched_results: # If a general error occurred and no items were processed
+        pass # The spinner.fail message above is sufficient
+    elif not fetched_results: # Should be caught by spinner.warn if overall_success is true
+        print("No indicators to display.")
+    else:
+        for result in fetched_results:
+            print(f"\n{result['name']}:")
+            if 'error' in result:
+                if result['error'] == "Data point missing for latest or previous period.":
+                     print(f"  {result['error']}")
+                     print(f"  Latest ({result.get('latest_date','N/A')}): {result.get('latest_value_raw','N/A')}")
+                     print(f"  Previous ({result.get('previous_date','N/A')}): {result.get('previous_value_raw','N/A')}")
+                else:
+                    print(f"  Error: {result['error']}")
+                continue
+
+            print(f"  Latest Value ({result['latest_date']}): {result['latest_value']}")
+            
+            if result['is_percentage_change']:
+                if result['previous_value'] != 0:
+                    percentage_change = (result['change'] / result['previous_value']) * 100
+                    print(f"  Change from Previous ({result['previous_date']}): {percentage_change:+.2f}% (from {result['previous_value']})")
+                else:
+                    print(f"  Change from Previous ({result['previous_date']}): N/A (previous value was 0)")
+            else:
+                print(f"  Change from Previous ({result['previous_date']}): {result['change']:+.2f} (from {result['previous_value']})")
+            
+    input("\nPress Enter to continue...")
+
+def fred_menu():
+    """Display and handle FRED data menu"""
+    while True:
+        print("\n=== US Federal Reserve Indicators Menu ===")
+        print("1. View latest Federal Reserve indicators")
+        print("2. Return to main menu")
+        
+        choice = input("\nEnter your choice (1-2): ")
+        
+        if choice == "1":
+            display_fred_indicators()
+        elif choice == "2":
+            return
+        else:
+            print("\nInvalid choice. Please enter 1-2.")
+
 def main_menu():
     """Display and handle main menu"""
     init_db()  # Ensure database exists
@@ -726,9 +985,10 @@ def main_menu():
         print("5. Tides")
         print("6. Salesforce")
         print("7. Earthquakes")
-        print("8. Quit")
+        print("8. US Federal Reserve Indicators")
+        print("9. Quit")
         
-        choice = input("\nEnter your choice (1-6): ")
+        choice = input("\nEnter your choice (1-9): ")
         
         if choice == "1":
             weather_menu()
@@ -745,10 +1005,12 @@ def main_menu():
         elif choice == "7":
             earthquakes_menu()
         elif choice == "8":
+            fred_menu()
+        elif choice == "9":
             print("\nGoodbye!")
             sys.exit(0)
         else:
-            print("\nInvalid choice. Please enter 1-6.")
+            print("\nInvalid choice. Please enter 1-9.")
 
 if __name__ == "__main__":
     main_menu()
