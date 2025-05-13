@@ -738,7 +738,7 @@ def salesforce_menu():
         return
 
     while True:
-        print("1. Query contacts")
+        print("\n1. Query contacts")
         print("2. Return to main menu")
         
         choice = input("\nEnter your choice (1-2): ")
