@@ -837,7 +837,11 @@ def display_fred_indicators():
             "Effective Federal Funds Rate": "FEDFUNDS",
             "10-Year Treasury Constant Maturity Rate": "DGS10",
             "M2 Money Stock (Billions of $)": "M2SL",
-            "Industrial Production Index (2017=100)": "INDPRO"
+            "Industrial Production Index (2017=100)": "INDPRO",
+            "Gross Domestic Product (Billions of $)": "GDP",
+            "CPI All Urban Consumers (Index 1982-84=100)": "CPIAUCSL",
+            "Civilian Unemployment Rate (%)": "UNRATE",
+            "30-Year Fixed Rate Mortgage Average (%)": "MORTGAGE30US"
         }
         
         for name, series_id in series_ids.items():
@@ -874,7 +878,7 @@ def display_fred_indicators():
                     'previous_date': previous_data['date'],
                     'previous_value': previous_value,
                     'change': change,
-                    'is_percentage_change': series_id in ["M2SL", "INDPRO"]
+                    'is_percentage_change': series_id in ["M2SL", "INDPRO", "GDP", "CPIAUCSL"]
                 }
                 fetched_results.append(result_item)
             except requests.exceptions.HTTPError as item_e: # Catch error per item
