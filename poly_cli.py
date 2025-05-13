@@ -828,6 +828,10 @@ def display_fred_indicators():
     spinner = Halo('Fetching Federal Reserve indicators...')
     spinner.start()
     
+    fetched_results = []
+    overall_success = True
+    api_error_message = ""
+
     try:
         series_ids = {
             "Effective Federal Funds Rate": "FEDFUNDS",
@@ -836,56 +840,113 @@ def display_fred_indicators():
             "Industrial Production Index (2017=100)": "INDPRO"
         }
         
-        print("\n--- Federal Reserve Economic Indicators ---")
         for name, series_id in series_ids.items():
-            data = get_fred_data(series_id, api_key)
-            observations = data.get('observations', [])
-            
-            if len(observations) < 2:
-                print(f"\n{name}: Not enough data available.")
-                continue
-            
-            latest_data = observations[0]
-            previous_data = observations[1]
-            
-            # FRED API sometimes returns '.' for value if data is not available
-            if latest_data['value'] == '.' or previous_data['value'] == '.':
-                print(f"\n{name}: Data point missing for latest or previous period.")
-                print(f"  Latest ({latest_data['date']}): {latest_data['value']}")
-                print(f"  Previous ({previous_data['date']}): {previous_data['value']}")
-                continue
-
-            latest_value = float(latest_data['value'])
-            previous_value = float(previous_data['value'])
-            
-            print(f"\n{name}:")
-            print(f"  Latest Value ({latest_data['date']}): {latest_value}")
-            
-            change = latest_value - previous_value
-            
-            if series_id in ["M2SL", "INDPRO"]: # For M2 and INDPRO, show percentage change
-                if previous_value != 0:
-                    percentage_change = (change / previous_value) * 100
-                    print(f"  Change from Previous ({previous_data['date']}): {percentage_change:+.2f}% (from {previous_value})")
-                else:
-                    print(f"  Change from Previous ({previous_data['date']}): N/A (previous value was 0)")
-            else: # For rates, show absolute change
-                print(f"  Change from Previous ({previous_data['date']}): {change:+.2f} (from {previous_value})")
+            try:
+                data = get_fred_data(series_id, api_key) # Network call
+                observations = data.get('observations', [])
                 
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 400: # Often API key issue or bad request
+                if len(observations) < 2:
+                    fetched_results.append({'name': name, 'error': "Not enough data available."})
+                    continue
+                
+                latest_data = observations[0]
+                previous_data = observations[1]
+                
+                if latest_data['value'] == '.' or previous_data['value'] == '.':
+                    fetched_results.append({
+                        'name': name, 
+                        'error': "Data point missing for latest or previous period.",
+                        'latest_date': latest_data['date'],
+                        'latest_value_raw': latest_data['value'],
+                        'previous_date': previous_data['date'],
+                        'previous_value_raw': previous_data['value']
+                    })
+                    continue
+
+                latest_value = float(latest_data['value'])
+                previous_value = float(previous_data['value'])
+                change = latest_value - previous_value
+                
+                result_item = {
+                    'name': name,
+                    'latest_date': latest_data['date'],
+                    'latest_value': latest_value,
+                    'previous_date': previous_data['date'],
+                    'previous_value': previous_value,
+                    'change': change,
+                    'is_percentage_change': series_id in ["M2SL", "INDPRO"]
+                }
+                fetched_results.append(result_item)
+            except requests.exceptions.HTTPError as item_e: # Catch error per item
+                error_detail_msg = str(item_e)
+                if item_e.response is not None and item_e.response.status_code == 400:
+                    try:
+                        error_detail = item_e.response.json()
+                        error_detail_msg = f"{item_e} - {error_detail.get('error_message', 'No additional details.')}"
+                    except json.JSONDecodeError:
+                        pass # Keep original error_detail_msg
+                fetched_results.append({'name': name, 'error': f"Failed to fetch: {error_detail_msg}"})
+            except Exception as item_e: # Catch other errors per item
+                 fetched_results.append({'name': name, 'error': f"An unexpected error occurred: {item_e}"})
+
+
+    except requests.exceptions.HTTPError as e: # General error, e.g. initial API key problem
+        overall_success = False
+        if e.response is not None and e.response.status_code == 400:
              try:
                 error_detail = e.response.json()
-                print(f"\nError fetching FRED data: {e} - {error_detail.get('error_message', 'No additional details.')}")
+                api_error_message = f"API Error: {e} - {error_detail.get('error_message', 'No additional details.')}"
              except json.JSONDecodeError:
-                print(f"\nError fetching FRED data: {e} - Could not parse error response.")
+                api_error_message = f"API Error: {e} - Could not parse error response."
         else:
-            print(f"\nError fetching FRED data: {e}")
+            api_error_message = f"HTTP Error: {e}"
     except Exception as e:
-        print(f"\nAn unexpected error occurred: {e}")
-    finally:
-        spinner.stop()
+        overall_success = False
+        api_error_message = f"An unexpected error occurred: {e}"
     
+    # Determine spinner final state
+    if not overall_success:
+        spinner.fail(api_error_message or "Failed to fetch Federal Reserve indicators due to an unexpected error.")
+    elif not fetched_results:
+        spinner.warn("No data could be retrieved for the selected indicators.")
+    else:
+        num_errors = sum(1 for item in fetched_results if 'error' in item)
+        if num_errors == len(fetched_results):
+            spinner.warn("Could not retrieve data for any of the selected indicators.")
+        elif num_errors > 0:
+            spinner.warn("Fetched some indicators, but encountered errors with others.")
+        else:
+            spinner.succeed("Fetched Federal Reserve indicators successfully.")
+
+    # Print results after spinner is done
+    print("\n--- Federal Reserve Economic Indicators ---")
+    if not overall_success and not fetched_results: # If a general error occurred and no items were processed
+        pass # The spinner.fail message above is sufficient
+    elif not fetched_results: # Should be caught by spinner.warn if overall_success is true
+        print("No indicators to display.")
+    else:
+        for result in fetched_results:
+            print(f"\n{result['name']}:")
+            if 'error' in result:
+                if result['error'] == "Data point missing for latest or previous period.":
+                     print(f"  {result['error']}")
+                     print(f"  Latest ({result.get('latest_date','N/A')}): {result.get('latest_value_raw','N/A')}")
+                     print(f"  Previous ({result.get('previous_date','N/A')}): {result.get('previous_value_raw','N/A')}")
+                else:
+                    print(f"  Error: {result['error']}")
+                continue
+
+            print(f"  Latest Value ({result['latest_date']}): {result['latest_value']}")
+            
+            if result['is_percentage_change']:
+                if result['previous_value'] != 0:
+                    percentage_change = (result['change'] / result['previous_value']) * 100
+                    print(f"  Change from Previous ({result['previous_date']}): {percentage_change:+.2f}% (from {result['previous_value']})")
+                else:
+                    print(f"  Change from Previous ({result['previous_date']}): N/A (previous value was 0)")
+            else:
+                print(f"  Change from Previous ({result['previous_date']}): {result['change']:+.2f} (from {result['previous_value']})")
+            
     input("\nPress Enter to continue...")
 
 def fred_menu():
