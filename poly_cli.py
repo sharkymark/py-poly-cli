@@ -489,26 +489,15 @@ def get_tide_data(station_id):
 def display_tide_data(tide_data):
     """Display tide information"""
     print("\nTide Information:")
-    print("-" * 50)
     for prediction in tide_data['predictions']:
-        time = prediction['t']
-        tide_type = prediction['type']
-        print(f"Time: {time}, Tide: {tide_type}")
-    print("-" * 50)
-
-def get_station_info(station_id):
-    """Fetch station information from NOAA API"""
-    url = f"https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/{station_id}.json"
-    response = requests.get(url)
-    response.raise_for_status()
-    return response.json()
+        time = datetime.strptime(prediction['t'], "%Y-%m-%d %H:%M")
+        tide_type = "High Tide" if prediction['type'] == "H" else "Low Tide"
+        formatted_time = time.strftime("%I:%M %p, %A, %B %d, %Y")
+        print(f"{formatted_time} - {tide_type}")
 
 def display_station_info(station_info):
     """Display station information"""
     print("\nStation Information:")
-    print("-" * 50)
-    
-    # Access the correct keys in the station_info dictionary
     print(f"Station ID: {station_info['stations'][0]['id']}")
     print(f"Station Name: {station_info['stations'][0]['name']}")
     print(f"State: {station_info['stations'][0]['state']}")
@@ -517,9 +506,8 @@ def display_station_info(station_info):
 
     # Generate Google Maps URL
     google_maps_url = f"https://www.google.com/maps/@?api=1&map_action=map&center={station_info['stations'][0]['lat']},{station_info['stations'][0]['lng']}&zoom=15"
-
-    print(f"\nClick to view station location on Google Maps: {google_maps_url}")
-    print("-" * 50)
+    print("Google Maps:")
+    print(google_maps_url)
 
 def lookup_tides():
     """Handle tide lookup logic"""
@@ -566,6 +554,8 @@ def lookup_tides():
     # Get tide data
     try:
         tide_data = get_tide_data(station_id)
+        # Save the address to the database since we successfully got tide data
+        save_search(address, location_data)
     except requests.exceptions.HTTPError as e:
         print(f"\nError: Failed to retrieve tide data. {e}")
         return
@@ -573,21 +563,80 @@ def lookup_tides():
     # Display tide data
     display_tide_data(tide_data)
 
+def select_saved_address_for_tides():
+    """Handle selecting a saved address for tide lookup"""
+    addresses = get_saved_addresses()
+    if not addresses:
+        print("\nNo saved addresses found.")
+        return
+    
+    print("\nSaved addresses:")
+    for i, (address, matched_address, lat, lon, _) in enumerate(addresses, 1):
+        print(f"{i}. {matched_address}")
+    
+    choice = input("\nSelect address number (or 0 to go back): ")
+    try:
+        choice = int(choice)
+        if choice == 0:
+            return
+        if 1 <= choice <= len(addresses):
+            _, matched_address, lat, lon, _ = addresses[choice-1]
+            location_data = {
+                'matched_address': matched_address,
+                'lat': lat,
+                'lon': lon
+            }
+            
+            # Get nearest station
+            station_id = get_nearest_station(location_data)
+            
+            if station_id is None:
+                print("\nError: Could not find a nearby tide station.")
+                return
+            
+            # Get station information
+            station_info = get_station_info(station_id)
+            
+            if station_info is None:
+                print("\nError: Could not retrieve station information.")
+                return
+            
+            # Display station information
+            display_station_info(station_info)
+            
+            # Get tide data
+            try:
+                tide_data = get_tide_data(station_id)
+                # Display tide data
+                display_tide_data(tide_data)
+            except requests.exceptions.HTTPError as e:
+                print(f"\nError: Failed to retrieve tide data. {e}")
+                return
+            
+            input("\nPress Enter to continue...")
+        else:
+            print("\nInvalid selection.")
+    except ValueError:
+        print("\nPlease enter a valid number.")
+
 def tides_menu():
     """Display and handle tides menu"""
     while True:
         print("\n=== Tides Menu ===")
-        print("1. Look up tides by address")
-        print("2. Return to main menu")
+        print("1. Enter new address")
+        print("2. Select from saved addresses")
+        print("3. Return to main menu")
         
-        choice = input("\nEnter your choice (1-2): ")
+        choice = input("\nEnter your choice (1-3): ")
         
         if choice == "1":
             lookup_tides()
         elif choice == "2":
+            select_saved_address_for_tides()
+        elif choice == "3":
             return
         else:
-            print("\nInvalid choice. Please enter 1-2.")
+            print("\nInvalid choice. Please enter 1-3.")
 
 def get_salesforce_credentials():
     """Prompt the user for Salesforce credentials and verify them"""
@@ -752,3 +801,10 @@ def main_menu():
 
 if __name__ == "__main__":
     main_menu()
+
+def get_station_info(station_id):
+    """Fetch station information from NOAA API"""
+    url = f"https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/{station_id}.json"
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
