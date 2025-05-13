@@ -28,18 +28,27 @@ A command-line interface tool that provides various web service integrations inc
 
 - Tide Information
   - Converts address to coordinates using Census Geocoding API
-  - Finds the nearest NOAA tide station
+  - Finds the nearest NOAA tide station and displays its information (name, ID, coordinates)
+  - Generates a Google Maps link for the tide station
   - Retrieves tide predictions from NOAA API
   - Displays high and low tide times and types
 
 - Querying Salesforce contacts
-  - Prompts for username, password, and personal token
-  - Retrieves contact records based on filter criteria
+  - Checks for `SALESFORCE_USERNAME`, `SALESFORCE_PASSWORD`, and `SALESFORCE_SECURITY_TOKEN` environment variables.
+  - Attempts authentication using environment variables if set.
+  - If environment variables are not set or authentication fails, instructs the user to set/check them.
+  - Retrieves contact records based on filter criteria.
 
 - Earthquake Information
   - Retrieves last 24 hours 5.0 earthquake data from the USGS Earthquake API
   - Displays earthquake magnitude, location, and time
   - Filters results by minimum magnitude and time range
+
+- US Federal Reserve (FRED) Indicators
+  - Checks for `FRED_API_KEY` environment variable.
+  - Fetches and displays key economic indicators from the FRED API if the key is set.
+  - Indicators include: Effective Federal Funds Rate, 10-Year Treasury Rate, M2 Money Stock, Industrial Production, GDP, CPI, Unemployment Rate, Mortgage Rates, Housing Starts, Consumer Sentiment, Initial Claims, and Home Price Index.
+  - Shows the latest value, its date, and the change from the previous observation.
 
 ## Installation
 
@@ -68,8 +77,10 @@ Navigate through the menus to:
 3. Browse latest news articles from specific domains
 4. View latest economic indicators from the BLS
 5. Look up tide information by address
-6. View recent earthquake information
-7. Exit the application
+6. Query Salesforce contacts
+7. View recent earthquake information
+8. View US Federal Reserve (FRED) economic indicators
+9. Exit the application
 
 ## Resources
 
@@ -83,6 +94,7 @@ Navigate through the menus to:
 - [simple_salesforce](https://pypi.org/project/simple-salesforce/) - A basic Salesforce.com REST API client for Python.
 - [GitHub Repository](https://github.com/simple-salesforce/simple-salesforce)
 - [USGS Earthquake API](https://earthquake.usgs.gov/fdsnws/event/1/) - Recent earthquake data
+- [FRED API (Federal Reserve Economic Data)](https://fred.stlouisfed.org/docs/api/fred/) - US economic indicators
 
 ### Development
 - [DevContainer Specification](https://containers.dev/implementors/spec/) - Learn about DevContainer configuration
