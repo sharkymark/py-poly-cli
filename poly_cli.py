@@ -6,6 +6,7 @@ from datetime import datetime
 from datetime import datetime, timedelta
 import sqlite3
 from dateutil import parser
+import sqlite3 # Ensure sqlite3 is imported to use its constants
 import os
 from gnews import GNews
 import json
@@ -18,8 +19,20 @@ sf_password = None
 sf_token = None
 sf_instance = None
 
+# Adapters for storing and retrieving datetime objects with SQLite
+def adapt_datetime_iso(val):
+    """Adapt datetime.datetime to ISO 8601 string."""
+    return val.isoformat()
+
+def convert_datetime_iso(val):
+    """Convert ISO 8601 string to datetime.datetime object."""
+    return datetime.fromisoformat(val.decode())
+
+sqlite3.register_adapter(datetime, adapt_datetime_iso)
+sqlite3.register_converter("DATETIME", convert_datetime_iso)
+
 def init_db():
-    conn = sqlite3.connect('weather_history.db')
+    conn = sqlite3.connect('weather_history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS searches
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +45,7 @@ def init_db():
     conn.close()
 
 def save_search(address, location_data):
-    conn = sqlite3.connect('weather_history.db')
+    conn = sqlite3.connect('weather_history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
     c = conn.cursor()
     c.execute('''INSERT INTO searches (address, matched_address, lat, lon, timestamp)
                  VALUES (?, ?, ?, ?, ?)''',
@@ -161,7 +174,7 @@ def lookup_weather():
         save_search(address, location_data)
 
 def get_saved_addresses():
-    conn = sqlite3.connect('weather_history.db')
+    conn = sqlite3.connect('weather_history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
     c = conn.cursor()
     c.execute('''SELECT DISTINCT address, matched_address, lat, lon, MAX(timestamp) as latest
                  FROM searches 
