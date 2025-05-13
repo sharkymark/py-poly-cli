@@ -663,19 +663,37 @@ def get_salesforce_credentials():
     global sf_username, sf_password, sf_token, sf_instance
 
     if sf_instance is not None:
-            return sf_instance
+        return sf_instance
 
-    while True:
-        sf_username = input("Enter Salesforce username: ")
-        sf_password = input("Enter Salesforce password: ")
-        sf_token = input("Enter Salesforce security token: ")
-        
+    sf_username_env = os.getenv("SALESFORCE_USERNAME")
+    sf_password_env = os.getenv("SALESFORCE_PASSWORD")
+    sf_token_env = os.getenv("SALESFORCE_SECURITY_TOKEN")
+
+    if sf_username_env and sf_password_env and sf_token_env:
+        spinner = Halo('Authenticating with Salesforce using environment variables...')
+        spinner.start()
         try:
-            sf_instance = Salesforce(username=sf_username, password=sf_password, security_token=sf_token)
-            print("\nSalesforce credentials verified successfully.\n")
+            sf_instance = Salesforce(username=sf_username_env, password=sf_password_env, security_token=sf_token_env)
+            spinner.succeed("Salesforce authentication successful using environment variables.")
+            # Store them globally if needed, or just use the instance
+            sf_username = sf_username_env
+            sf_password = sf_password_env # Not strictly necessary to store if only instance is used
+            sf_token = sf_token_env       # Not strictly necessary to store if only instance is used
             return sf_instance
         except SalesforceAuthenticationFailed:
-            print("\nInvalid Salesforce credentials. Please try again.\n")
+            spinner.fail("Salesforce authentication failed using environment variables.")
+            print("Please check your SALESFORCE_USERNAME, SALESFORCE_PASSWORD, and SALESFORCE_SECURITY_TOKEN environment variables.")
+            return None
+        except Exception as e:
+            spinner.fail(f"An unexpected error occurred during Salesforce authentication: {e}")
+            return None
+        finally:
+            if 'spinner' in locals() and spinner.is_active:
+                spinner.stop()
+    else:
+        print("\nSalesforce credentials not found in environment variables.")
+        print("Please set SALESFORCE_USERNAME, SALESFORCE_PASSWORD, and SALESFORCE_SECURITY_TOKEN.")
+        return None
 
 def query_salesforce_contacts(sf, filter_value):
     query = f"""
@@ -714,6 +732,11 @@ def salesforce_menu():
     """Display and handle Salesforce menu"""
     print("\n=== Salesforce Menu ===\n")
     sf = get_salesforce_credentials()
+
+    if sf is None:
+        input("\nPress Enter to return to the main menu...")
+        return
+
     while True:
         print("1. Query contacts")
         print("2. Return to main menu")
