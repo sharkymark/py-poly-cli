@@ -372,29 +372,37 @@ def get_bls_data(series_id):
 
 def display_bls_data():
     """Display economic indicators from BLS API"""
-    spinner = Halo('Fetching economic indicators...')
-    spinner.start()
+    # Removed global spinner initialization and start
     
-    try:
-        # Define the series IDs for the required economic indicators
-        series_ids = {
-            "CPI": "CUSR0000SA0",
-            "CPI Less Food and Energy": "CUSR0000SA0L1E",
-            "PPI": "PCUOMFG--OMFG--",
-            "Nonfarm Payroll": "CES0000000001",
-            "Unemployment Rate": "LNS14000000",
-            "Employment in Residential Construction": "CES2023610001"
-        }
-        
-        for name, series_id in series_ids.items():
-            data = get_bls_data(series_id)
+    series_ids = {
+        "CPI": "CUSR0000SA0",
+        "CPI Less Food and Energy": "CUSR0000SA0L1E",
+        "PPI": "PCUOMFG--OMFG--",
+        "Nonfarm Payroll": "CES0000000001",
+        "Unemployment Rate": "LNS14000000",
+        "Employment in Residential Construction": "CES2023610001"
+    }
+    
+    for name, series_id in series_ids.items():
+        spinner = Halo(text=f'Fetching {name}...', spinner='dots')
+        spinner.start()
+        try:
+            data = get_bls_data(series_id) # This function calls response.raise_for_status()
+            
+            if 'Results' not in data or not data['Results'] or \
+               'series' not in data['Results'] or not data['Results']['series'] or \
+               'data' not in data['Results']['series'][0] or not data['Results']['series'][0]['data']:
+                spinner.fail(f"Failed to fetch {name}: Unexpected data structure or empty series data.")
+                print(f"\n{name}: Unexpected data structure or empty series data received.")
+                continue
+
             series_data = data['Results']['series'][0]['data']
             
             if len(series_data) < 2:
-                print(f"\n{name}: No sufficient data available.")
+                spinner.warn(f"Insufficient data for {name}")
+                print(f"\n{name}: No sufficient data available (requires at least 2 data points for comparison).")
                 continue
             
-            # Extract the latest and previous data points
             latest_data = series_data[0]
             previous_data = series_data[1]
             
@@ -403,18 +411,30 @@ def display_bls_data():
             year = latest_data['year']
             period = latest_data['periodName']
             
-            # Calculate percentage change
             percentage_change = ((latest_value - previous_value) / previous_value) * 100
+            
+            spinner.succeed(f'Successfully fetched {name}')
             
             print(f"\n{name}:")
             print(f"  Value: {latest_value}")
             print(f"  Date: {period} {year}")
             print(f"  Month-over-Month Change: {percentage_change:.2f}%")
         
-    except Exception as e:
-        print(f"\nError fetching BLS data: {e}")
-    finally:
-        spinner.stop()
+        except requests.exceptions.HTTPError as e:
+            spinner.fail(f'Failed to fetch {name}')
+            error_message = f"HTTP {e.response.status_code} - {e.response.reason}"
+            try: # Try to get more specific error from BLS response
+                error_details = e.response.json().get('message')
+                if error_details:
+                    error_message += f": {', '.join(error_details)}"
+            except ValueError: # If response is not JSON or no 'message' field
+                pass
+            print(f"\nError fetching {name}: {error_message}")
+        except Exception as e:
+            spinner.fail(f'Failed to process {name}')
+            print(f"\nError processing {name}: {e}")
+            
+    # Removed global spinner stop from a finally block
     
     input("\nPress Enter to continue...")
 
@@ -825,113 +845,89 @@ def display_fred_indicators():
         input("\nPress Enter to continue...")
         return
 
-    spinner = Halo('Fetching Federal Reserve indicators...')
-    spinner.start()
+    # Removed global spinner initialization
+    
+    series_ids = {
+        "Effective Federal Funds Rate": "FEDFUNDS",
+        "10-Year Treasury Constant Maturity Rate": "DGS10",
+        "M2 Money Stock (Billions of $)": "M2SL",
+        "Industrial Production Index (2017=100)": "INDPRO",
+        "Gross Domestic Product (Billions of $)": "GDP",
+        "CPI All Urban Consumers (Index 1982-84=100)": "CPIAUCSL",
+        "Civilian Unemployment Rate (%)": "UNRATE",
+        "30-Year Fixed Rate Mortgage Average (%)": "MORTGAGE30US",
+        "Housing Starts (Thousands of Units)": "HOUST",
+        "Consumer Sentiment (U. Michigan)": "UMCSENT",
+        "Initial Claims (Weekly)": "ICSA",
+        "S&P/Case-Shiller U.S. Home Price Index": "CSUSHPINSA"
+    }
     
     fetched_results = []
-    overall_success = True
-    api_error_message = ""
 
-    try:
-        series_ids = {
-            "Effective Federal Funds Rate": "FEDFUNDS",
-            "10-Year Treasury Constant Maturity Rate": "DGS10",
-            "M2 Money Stock (Billions of $)": "M2SL",
-            "Industrial Production Index (2017=100)": "INDPRO",
-            "Gross Domestic Product (Billions of $)": "GDP",
-            "CPI All Urban Consumers (Index 1982-84=100)": "CPIAUCSL",
-            "Civilian Unemployment Rate (%)": "UNRATE",
-            "30-Year Fixed Rate Mortgage Average (%)": "MORTGAGE30US",
-            "Housing Starts (Thousands of Units)": "HOUST",
-            "Consumer Sentiment (U. Michigan)": "UMCSENT",
-            "Initial Claims (Weekly)": "ICSA",
-            "S&P/Case-Shiller U.S. Home Price Index": "CSUSHPINSA"
-        }
-        
-        for name, series_id in series_ids.items():
-            try:
-                data = get_fred_data(series_id, api_key) # Network call
-                observations = data.get('observations', [])
-                
-                if len(observations) < 2:
-                    fetched_results.append({'name': name, 'error': "Not enough data available."})
-                    continue
-                
-                latest_data = observations[0]
-                previous_data = observations[1]
-                
-                if latest_data['value'] == '.' or previous_data['value'] == '.':
-                    fetched_results.append({
-                        'name': name, 
-                        'error': "Data point missing for latest or previous period.",
-                        'latest_date': latest_data['date'],
-                        'latest_value_raw': latest_data['value'],
-                        'previous_date': previous_data['date'],
-                        'previous_value_raw': previous_data['value']
-                    })
-                    continue
+    print("\n--- Federal Reserve Economic Indicators ---")
 
-                latest_value = float(latest_data['value'])
-                previous_value = float(previous_data['value'])
-                change = latest_value - previous_value
-                
-                result_item = {
-                    'name': name,
+    for name, series_id in series_ids.items():
+        spinner = Halo(text=f'Fetching {name}...', spinner='dots')
+        spinner.start()
+        try:
+            data = get_fred_data(series_id, api_key) # Network call
+            observations = data.get('observations', [])
+            
+            if len(observations) < 2:
+                spinner.warn(f"Insufficient data for {name}")
+                fetched_results.append({'name': name, 'error': "Not enough data available (requires at least 2 observations)."})
+                continue
+            
+            latest_data = observations[0]
+            previous_data = observations[1]
+            
+            if latest_data['value'] == '.' or previous_data['value'] == '.':
+                spinner.warn(f"Data point missing for {name}")
+                fetched_results.append({
+                    'name': name, 
+                    'error': "Data point missing for latest or previous period.",
                     'latest_date': latest_data['date'],
-                    'latest_value': latest_value,
+                    'latest_value_raw': latest_data['value'],
                     'previous_date': previous_data['date'],
-                    'previous_value': previous_value,
-                    'change': change,
-                    'is_percentage_change': series_id in ["M2SL", "INDPRO", "GDP", "CPIAUCSL", "HOUST", "CSUSHPINSA"]
-                }
-                fetched_results.append(result_item)
-            except requests.exceptions.HTTPError as item_e: # Catch error per item
-                error_detail_msg = str(item_e)
-                if item_e.response is not None and item_e.response.status_code == 400:
+                    'previous_value_raw': previous_data['value']
+                })
+                continue
+
+            latest_value = float(latest_data['value'])
+            previous_value = float(previous_data['value'])
+            change = latest_value - previous_value
+            
+            spinner.succeed(f"Successfully fetched {name}")
+            result_item = {
+                'name': name,
+                'latest_date': latest_data['date'],
+                'latest_value': latest_value,
+                'previous_date': previous_data['date'],
+                'previous_value': previous_value,
+                'change': change,
+                'is_percentage_change': series_id in ["M2SL", "INDPRO", "GDP", "CPIAUCSL", "HOUST", "CSUSHPINSA"]
+            }
+            fetched_results.append(result_item)
+
+        except requests.exceptions.HTTPError as item_e:
+            error_detail_msg = str(item_e)
+            if item_e.response is not None:
+                error_detail_msg = f"HTTP {item_e.response.status_code} - {item_e.response.reason}"
+                if item_e.response.status_code == 400:
                     try:
                         error_detail = item_e.response.json()
-                        error_detail_msg = f"{item_e} - {error_detail.get('error_message', 'No additional details.')}"
+                        error_detail_msg += f": {error_detail.get('error_message', 'No additional details.')}"
                     except json.JSONDecodeError:
                         pass # Keep original error_detail_msg
-                fetched_results.append({'name': name, 'error': f"Failed to fetch: {error_detail_msg}"})
-            except Exception as item_e: # Catch other errors per item
-                 fetched_results.append({'name': name, 'error': f"An unexpected error occurred: {item_e}"})
+            spinner.fail(f"Failed to fetch {name}")
+            fetched_results.append({'name': name, 'error': f"Failed to fetch: {error_detail_msg}"})
+        except Exception as item_e:
+            spinner.fail(f"Failed to process {name}")
+            fetched_results.append({'name': name, 'error': f"An unexpected error occurred: {item_e}"})
 
-
-    except requests.exceptions.HTTPError as e: # General error, e.g. initial API key problem
-        overall_success = False
-        if e.response is not None and e.response.status_code == 400:
-             try:
-                error_detail = e.response.json()
-                api_error_message = f"API Error: {e} - {error_detail.get('error_message', 'No additional details.')}"
-             except json.JSONDecodeError:
-                api_error_message = f"API Error: {e} - Could not parse error response."
-        else:
-            api_error_message = f"HTTP Error: {e}"
-    except Exception as e:
-        overall_success = False
-        api_error_message = f"An unexpected error occurred: {e}"
-    
-    # Determine spinner final state
-    if not overall_success:
-        spinner.fail(api_error_message or "Failed to fetch Federal Reserve indicators due to an unexpected error.")
-    elif not fetched_results:
-        spinner.warn("No data could be retrieved for the selected indicators.")
-    else:
-        num_errors = sum(1 for item in fetched_results if 'error' in item)
-        if num_errors == len(fetched_results):
-            spinner.warn("Could not retrieve data for any of the selected indicators.")
-        elif num_errors > 0:
-            spinner.warn("Fetched some indicators, but encountered errors with others.")
-        else:
-            spinner.succeed("Fetched Federal Reserve indicators successfully.")
-
-    # Print results after spinner is done
-    print("\n--- Federal Reserve Economic Indicators ---")
-    if not overall_success and not fetched_results: # If a general error occurred and no items were processed
-        pass # The spinner.fail message above is sufficient
-    elif not fetched_results: # Should be caught by spinner.warn if overall_success is true
-        print("No indicators to display.")
+    # Print results after all spinners are done
+    if not fetched_results:
+        print("No indicators to display or all attempts failed.")
     else:
         for result in fetched_results:
             print(f"\n{result['name']}:")
@@ -982,10 +978,10 @@ def main_menu():
         print("2. NFL Scores")
         print("3. News")
         print("4. BLS Economic Indicators")
-        print("5. Tides")
-        print("6. Salesforce")
-        print("7. Earthquakes")
-        print("8. US Federal Reserve Indicators")
+        print("5. US Federal Reserve Indicators") # Moved FRED
+        print("6. Tides") # Renumbered
+        print("7. Salesforce") # Renumbered
+        print("8. Earthquakes") # Renumbered
         print("9. Quit")
         
         choice = input("\nEnter your choice (1-9): ")
@@ -998,14 +994,14 @@ def main_menu():
             news_menu()
         elif choice == "4":
             bls_menu()
-        elif choice == "5":
-            tides_menu()
-        elif choice == "6":
-            salesforce_menu()
-        elif choice == "7":
-            earthquakes_menu()
-        elif choice == "8":
+        elif choice == "5": # Adjusted choice for FRED
             fred_menu()
+        elif choice == "6": # Adjusted choice
+            tides_menu()
+        elif choice == "7": # Adjusted choice
+            salesforce_menu()
+        elif choice == "8": # Adjusted choice
+            earthquakes_menu()
         elif choice == "9":
             print("\nGoodbye!")
             sys.exit(0)
