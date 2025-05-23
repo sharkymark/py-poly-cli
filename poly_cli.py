@@ -6,7 +6,7 @@ from halo import Halo
 from datetime import datetime
 from datetime import datetime, timedelta
 import sqlite3
-from dateutil import parser
+from dateutil import parser as dateutil_parser  # Renamed to avoid naming conflict
 import sqlite3 # Ensure sqlite3 is imported to use its constants
 import os
 from gnews import GNews
@@ -523,7 +523,7 @@ def get_news(domain=None):
         
         for article in articles:
             # Parse and format the date
-            pub_date = parser.parse(article['published date'])
+            pub_date = dateutil_parser.parse(article['published date'])
             friendly_date = pub_date.strftime("%B %d, %Y at %I:%M %p")
             
             print(f"Title: {article['title']}")
@@ -545,7 +545,7 @@ def get_news(domain=None):
 def news_menu():
     """Display and handle news menu"""
     # Default news sites to include
-    default_sites = ['wsj.com', 'washingtonpost.com', 'nytimes.com', 'apnews.com', 'whitehouse.gov']
+    default_sites = ['wsj.com', 'washingtonpost.com', 'nytimes.com', 'apnews.com']
     
     # Initialize default news sites in the database if they don't exist
     for site in default_sites:
@@ -561,13 +561,9 @@ def news_menu():
             
             print("\n=== News Menu ===")
             
-            # Display menu options
-            print("1. Enter a new domain")
-            print("2. Return to main menu")
-            
             # Display default news sites section
-            print("\n=== Default News Sites ===")
-            next_index = 3
+            print("=== Default News Sites ===")
+            next_index = 1
             for i, site in enumerate(default_sites, next_index):
                 print(f"{i}. {site}")
             
@@ -578,32 +574,34 @@ def news_menu():
                 print("\n=== Saved News Sites ===")
                 for i, site in enumerate(user_saved_sites, next_index):
                     print(f"{i}. {site}")
+                next_index += len(user_saved_sites)
             
-            # Add return to main menu at the bottom as well
-            print(f"\n{next_index + len(user_saved_sites)}. Return to main menu")
+            # Add options at the bottom
+            print("\n=== Options ===")
+            print(f"{next_index}. Enter a new domain")
+            print(f"{next_index + 1}. Return to main menu")
             
             # Calculate total options
-            total_options = 2 + len(default_sites) + len(user_saved_sites) + 1  # +1 for the extra return option
+            total_options = next_index + 1
             choice = safe_input(f"\nEnter your choice (1-{total_options}): ")
             
             try:
                 choice_num = int(choice)
-                if choice_num == 1:
+                if 1 <= choice_num < 1 + len(default_sites):
+                    # User selected a default site
+                    selected_site = default_sites[choice_num - 1]
+                    get_news(selected_site)
+                elif 1 + len(default_sites) <= choice_num < 1 + len(default_sites) + len(user_saved_sites):
+                    # User selected a saved site
+                    selected_site = user_saved_sites[choice_num - (1 + len(default_sites))]
+                    get_news(selected_site)
+                elif choice_num == total_options - 1:
+                    # User selected "Enter a new domain"
                     domain = safe_input("\nEnter domain (e.g., wsj.com): ")
                     if domain:
                         get_news(domain)
-                elif choice_num == 2:
-                    return
-                elif 3 <= choice_num < 3 + len(default_sites):
-                    # User selected a default site
-                    selected_site = default_sites[choice_num - 3]
-                    get_news(selected_site)
-                elif 3 + len(default_sites) <= choice_num < total_options:
-                    # User selected a saved site
-                    selected_site = user_saved_sites[choice_num - (3 + len(default_sites))]
-                    get_news(selected_site)
                 elif choice_num == total_options:
-                    # User selected the return to main menu option at the bottom
+                    # User selected "Return to main menu"
                     return
                 else:
                     print(f"\nInvalid choice. Please enter 1-{total_options}.")
