@@ -7,11 +7,17 @@ A command-line interface tool that provides various web service integrations inc
 - Weather lookup by address
   - Converts addresses to coordinates using Census Geocoding API
   - Fetches detailed weather data from National Weather Service API
-  - Stores recent lookups in local SQLite database
+  - Stores recent lookups in local SQLite database (`history.db`)
   - Generates Google Maps links for looked-up addresses
 
-- NFL Scores
-  - Real-time game scores from ESPN API
+- Sports Scores
+  - Real-time game scores from ESPN API for multiple leagues:
+    - NFL (National Football League)
+    - MLB (Major League Baseball)
+    - NHL (National Hockey League)
+    - NBA (National Basketball Association)
+    - MLS (Major League Soccer)
+    - NCAA College Football
   - Shows upcoming, in-progress, and completed games
   - Displays current game period and score for live games
 
@@ -20,6 +26,9 @@ A command-line interface tool that provides various web service integrations inc
   - Filter articles by specific domains (e.g., wsj.com)
   - Displays article titles, publication dates, and URLs
   - Limited to 5 most recent articles per query
+  - Includes default news sites (wsj.com, washingtonpost.com, nytimes.com, apnews.com, whitehouse.gov)
+  - Saves user-entered domains to the database for future use
+  - Organizes news sources into "Default News Sites" and "Saved News Sites" categories
 
 - BLS Economic Indicators
   - Retrieves key economic indicators from the BLS API
@@ -61,6 +70,21 @@ This project uses DevContainers for development. To get started:
 
 The container will automatically install all dependencies and start the application.
 
+Alternatively, you can set up manually:
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd py-poly-cli
+
+# Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
 ## Usage
 
 Run the application:
@@ -73,8 +97,10 @@ If using a dev container, the application is started automatically.
 
 Navigate through the menus to:
 1. Look up weather for a new address or select from recent lookups
-2. View live NFL scores and game information
+2. View live sports scores for various leagues (NFL, MLB, NHL, NBA, MLS, College Football)
 3. Browse latest news articles from specific domains
+   - Enter a new domain or select from default/saved news sites
+   - Default sites include: wsj.com, washingtonpost.com, nytimes.com, apnews.com, whitehouse.gov
 4. View latest economic indicators from the BLS
 5. Look up tide information by address
 6. Query Salesforce contacts
@@ -82,13 +108,15 @@ Navigate through the menus to:
 8. View US Federal Reserve (FRED) economic indicators
 9. Exit the application
 
+The application features graceful exit handling with Ctrl+C and Ctrl+D, allowing you to exit safely from any menu.
+
 ## Resources
 
 ### APIs Used
 - [Census Geocoding Services](https://geocoding.geo.census.gov/geocoder/Geocoding_Services_API.html) - Convert addresses to coordinates
 - [National Weather Service API](https://www.weather.gov/documentation/services-web-api) - Weather data and forecasts
 - [ESPN API](https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard) - NFL scores and game information
-- [Google News](https://news.google.com/) - News article aggregation
+- [Google News](https://news.google.com/) - News article aggregation via GNews library
 - [BLS API](https://www.bls.gov/developers/) - Economic indicators data
 - [NOAA Tides and Currents API](https://tidesandcurrents.noaa.gov/api/) - Tide predictions
 - [simple_salesforce](https://pypi.org/project/simple-salesforce/) - A basic Salesforce.com REST API client for Python.
@@ -96,10 +124,20 @@ Navigate through the menus to:
 - [USGS Earthquake API](https://earthquake.usgs.gov/fdsnws/event/1/) - Recent earthquake data
 - [FRED API (Federal Reserve Economic Data)](https://fred.stlouisfed.org/docs/api/fred/) - US economic indicators
 
+### Data Storage
+- SQLite database (`history.db`) stores:
+  - Weather search history (addresses, coordinates)
+  - News site URLs (both default and user-saved)
+
 ### Development
 - [DevContainer Specification](https://containers.dev/implementors/spec/) - Learn about DevContainer configuration
 
 ## Requirements
 - Python 3.11+
 - Docker (for development container)
-- Required Python packages listed in requirements.txt
+- Required Python packages (included in requirements.txt):
+  - requests: For API calls
+  - halo: For terminal spinners
+  - python-dateutil: For date parsing and formatting
+  - gnews: For Google News integration
+  - simple_salesforce: For Salesforce API interaction

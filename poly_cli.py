@@ -1,6 +1,7 @@
 import requests
 import sys
 import urllib.parse
+import argparse
 from halo import Halo
 from datetime import datetime
 from datetime import datetime, timedelta
@@ -12,6 +13,14 @@ from gnews import GNews
 import json
 import math
 from simple_salesforce import Salesforce, SalesforceAuthenticationFailed, SalesforceExpiredSession
+
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description='Poly CLI - A multi-function command-line interface')
+parser.add_argument('--debug', action='store_true', help='Enable debug mode with additional information')
+args = parser.parse_args()
+
+# Global debug flag
+DEBUG_MODE = args.debug
 
 # Global variables to store Salesforce credentials
 sf_username = None
@@ -32,7 +41,7 @@ sqlite3.register_adapter(datetime, adapt_datetime_iso)
 sqlite3.register_converter("DATETIME", convert_datetime_iso)
 
 def init_db():
-    conn = sqlite3.connect('weather_history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
+    conn = sqlite3.connect('history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS searches
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,11 +50,15 @@ def init_db():
                   lat REAL,
                   lon REAL,
                   timestamp DATETIME)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS news_sites
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  url TEXT UNIQUE,
+                  timestamp DATETIME)''')
     conn.commit()
     conn.close()
 
 def save_search(address, location_data):
-    conn = sqlite3.connect('weather_history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
+    conn = sqlite3.connect('history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
     c = conn.cursor()
     c.execute('''INSERT INTO searches (address, matched_address, lat, lon, timestamp)
                  VALUES (?, ?, ?, ?, ?)''',
@@ -56,6 +69,28 @@ def save_search(address, location_data):
                   datetime.now()))
     conn.commit()
     conn.close()
+
+def save_news_site(url):
+    """Save a news site URL to the database"""
+    conn = sqlite3.connect('history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
+    c = conn.cursor()
+    try:
+        c.execute('''INSERT OR IGNORE INTO news_sites (url, timestamp)
+                    VALUES (?, ?)''', (url, datetime.now()))
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+    finally:
+        conn.close()
+
+def get_saved_news_sites():
+    """Get all saved news site URLs from the database"""
+    conn = sqlite3.connect('history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
+    c = conn.cursor()
+    c.execute('''SELECT url FROM news_sites ORDER BY timestamp DESC''')
+    sites = [row[0] for row in c.fetchall()]
+    conn.close()
+    return sites
 
 def get_coordinates(address):
     """Convert address to coordinates using Census Geocoding API"""
@@ -149,7 +184,7 @@ def display_weather(location_data, weather_data):
 
 def lookup_weather():
     """Handle weather lookup logic"""
-    address = input("\nEnter address (street, city, state, zip code): ")
+    address = safe_input("\nEnter address (street, city, state, zip code): ")
     
     # Get coordinates
     spinner = Halo('Looking up address...')
@@ -174,7 +209,7 @@ def lookup_weather():
         save_search(address, location_data)
 
 def get_saved_addresses():
-    conn = sqlite3.connect('weather_history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
+    conn = sqlite3.connect('history.db', detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
     c = conn.cursor()
     c.execute('''SELECT DISTINCT address, matched_address, lat, lon, MAX(timestamp) as latest
                  FROM searches 
@@ -194,7 +229,7 @@ def select_saved_address():
     for i, (address, matched_address, lat, lon, _) in enumerate(addresses, 1):
         print(f"{i}. {matched_address}")
     
-    choice = input("\nSelect address number (or 0 to go back): ")
+    choice = safe_input("\nSelect address number (or 0 to go back): ")
     try:
         choice = int(choice)
         if choice == 0:
@@ -209,7 +244,7 @@ def select_saved_address():
             weather_data = get_weather(lat, lon)
             if weather_data:
                 display_weather(location_data, weather_data)
-            input("\nPress Enter to continue...")
+            safe_input("\nPress Enter to continue...")
         else:
             print("\nInvalid selection.")
     except ValueError:
@@ -218,37 +253,50 @@ def select_saved_address():
 def weather_menu():
     """Display and handle weather submenu"""
     while True:
-        print("\n=== Weather Lookup Menu ===")
-        print("1. Enter new address")
-        print("2. Select from saved addresses")
-        print("3. Return to main menu")
-        
-        choice = input("\nEnter your choice (1-3): ")
-        
-        if choice == "1":
-            lookup_weather()
-        elif choice == "2":
-            select_saved_address()
-        elif choice == "3":
-            return
-        else:
-            print("\nInvalid choice. Please enter 1-3.")
+        try:
+            print("\n=== Weather Lookup Menu ===")
+            print("1. Enter new address")
+            print("2. Select from saved addresses")
+            print("3. Return to main menu")
+            
+            choice = safe_input("\nEnter your choice (1-3): ")
+            
+            if choice == "1":
+                lookup_weather()
+            elif choice == "2":
+                select_saved_address()
+            elif choice == "3":
+                return
+            else:
+                print("\nInvalid choice. Please enter 1-3.")
+        except KeyboardInterrupt:
+            exit_gracefully("\n\nProgram interrupted. Goodbye!")
+        except EOFError:
+            exit_gracefully("\n\nEnd of input. Goodbye!")
 
-def get_nfl_scores():
-    """Fetch NFL scores from ESPN API"""
-    spinner = Halo('Getting NFL scores...')
+def get_sports_scores(sport, league, league_name):
+    """Fetch sports scores from ESPN API for specified league"""
+    spinner = Halo(f'Getting {league_name} scores...')
     spinner.start()
     try:
-        url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+        url = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
         response = requests.get(url)
         response.raise_for_status()
         data = response.json()
         
         if not data.get('events'):
-            print("\nNo NFL games found.")
+            print(f"\nNo {league_name} games found.")
+            
+            # Show debug info only when in debug mode
+            if DEBUG_MODE:
+                print(f"\n--- Debug Info ---")
+                print(f"API URL: {url}")
+                print(f"Data returned: {json.dumps(data, indent=2, default=str)[:500]}...")  # Show truncated data
+            
+            print("-" * 70)
             return
         
-        print("\nNFL Scores:")
+        print(f"\n{league_name} Scores:")
         print("-" * 50)
         
         for event in data['events']:
@@ -257,9 +305,23 @@ def get_nfl_scores():
             home_team = competition['competitors'][0]
             away_team = competition['competitors'][1]
             
+            # Get venue information if available (for all game states)
+            venue_info = ""
+            if competition.get('venue') and competition['venue'].get('fullName'):
+                venue_name = competition['venue']['fullName']
+                # Get city/state if available
+                if competition['venue'].get('address') and competition['venue']['address'].get('city'):
+                    venue_city = competition['venue']['address']['city']
+                    venue_info = f"{venue_name}, {venue_city}"
+                else:
+                    venue_info = venue_name
+            
             # Format based on game status
             if game_status == 'pre':
-                game_time = event['status']['type']['shortDetail']
+                # Use the detail field which contains the game time in local timezone
+                # Detail example: "Sat, May 24th at 3:00 PM EDT"
+                game_time = event['status']['type'].get('detail', event['status']['type'].get('shortDetail', 'Scheduled'))
+                
                 print(f"{away_team['team']['displayName']} @ {home_team['team']['displayName']}")
                 print(f"Starting: {game_time}")
             else:
@@ -273,30 +335,169 @@ def get_nfl_scores():
                 else:  # post-game
                     print(f"Final: {away_team['team']['displayName']} {away_score} @ {home_team['team']['displayName']} {home_score}")
             
-            print("-" * 50)
+            # Display venue info for all game states
+            if venue_info.strip():
+                print(f"Venue: {venue_info.strip()}")
+            
+            print("-" * 70)
         
+        # Display debug info only in debug mode
+        if DEBUG_MODE:
+            print(f"--- Debug Info ---")
+            print(f"API URL: {url}")
+            
+            # For MLS, show extra debug info about the response structure
+            if league == "usa.1" and data.get('events'):
+                print("\nMLS Debug: Sample event structure")
+                sample_event = data['events'][0]
+                print(f"Event date format: {sample_event.get('date', 'N/A')}")
+                print(f"Status type: {json.dumps(sample_event.get('status', {}).get('type', {}), indent=2, default=str)}")
+                print(f"League: {json.dumps(data.get('leagues', [{}])[0] if data.get('leagues') else {}, indent=2, default=str)[:200]}...")
+                
     except Exception as e:
-        print(f"\nError getting NFL scores: {e}")
+        print(f"\nError getting {league_name} scores: {e}")
+        
+        # Display debug info for troubleshooting even when there's an error, but only in debug mode
+        if DEBUG_MODE:
+            print(f"\n--- Debug Info ---")
+            print(f"API URL: {url}")
+            
+        print("-" * 70)
     finally:
         spinner.stop()
     
-    input("\nPress Enter to continue...")
+    safe_input("\nPress Enter to continue...")
 
-def nfl_menu():
-    """Display and handle NFL scores menu"""
+def get_nfl_scores():
+    """Fetch NFL scores from ESPN API (legacy function for compatibility)"""
+    get_sports_scores("football", "nfl", "NFL")
+
+def scores_menu():
+    """Display and handle sports scores menu"""
     while True:
-        print("\n=== NFL Scores Menu ===")
-        print("1. View latest scores")
-        print("2. Return to main menu")
+        try:
+            print("\n=== Sports Scores Menu ===")
+            print("1. NFL")
+            print("2. MLB")
+            print("3. NHL")
+            print("4. NBA")
+            print("5. MLS")
+            print("6. College Football")
+            
+            # Conditionally add the debug option
+            if DEBUG_MODE:
+                print("7. View Raw API Data")
+                print("8. Return to main menu")
+                max_option = 8
+            else:
+                print("7. Return to main menu")
+                max_option = 7
+            
+            choice = safe_input(f"\nEnter your choice (1-{max_option}): ")
+            
+            if choice == "1":
+                get_sports_scores("football", "nfl", "NFL")
+            elif choice == "2":
+                get_sports_scores("baseball", "mlb", "MLB")
+            elif choice == "3":
+                get_sports_scores("hockey", "nhl", "NHL")
+            elif choice == "4":
+                get_sports_scores("basketball", "nba", "NBA")
+            elif choice == "5":
+                get_sports_scores("soccer", "usa.1", "MLS")
+            elif choice == "6":
+                get_sports_scores("football", "college-football", "NCAA Football")
+            elif choice == "7" and DEBUG_MODE:
+                view_raw_sports_data_menu()
+            elif (choice == "7" and not DEBUG_MODE) or (choice == "8" and DEBUG_MODE):
+                return
+            else:
+                print(f"\nInvalid choice. Please enter 1-{max_option}.")
+        except KeyboardInterrupt:
+            exit_gracefully("\n\nProgram interrupted. Goodbye!")
+        except EOFError:
+            exit_gracefully("\n\nEnd of input. Goodbye!")
+
+def view_raw_sports_data(sport, league, league_name):
+    """View raw JSON data from the ESPN API for a specific league"""
+    spinner = Halo(f'Fetching raw {league_name} API data...')
+    spinner.start()
+    try:
+        url = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        spinner.stop()
         
-        choice = input("\nEnter your choice (1-2): ")
+        print(f"\n=== Raw {league_name} API Data ===")
+        print(f"API URL: {url}")
+        print("\nJSON Response (first 1000 characters):")
+        print("-" * 80)
+        print(json.dumps(data, indent=2, default=str)[:1000])
+        print("...")
+        print("-" * 80)
         
-        if choice == "1":
-            get_nfl_scores()
-        elif choice == "2":
-            return
+        # Show important sections of the data structure
+        if data.get('events'):
+            print("\nImportant Data Fields:")
+            print("-" * 80)
+            print(f"Number of events: {len(data['events'])}")
+            
+            if len(data['events']) > 0:
+                sample_event = data['events'][0]
+                print(f"\nSample Event ID: {sample_event.get('id', 'N/A')}")
+                print(f"Event Date: {sample_event.get('date', 'N/A')}")
+                print(f"Status State: {sample_event.get('status', {}).get('type', {}).get('state', 'N/A')}")
+                print(f"Status Detail: {sample_event.get('status', {}).get('type', {}).get('shortDetail', 'N/A')}")
         else:
-            print("\nInvalid choice. Please enter 1-2.")
+            print("\nNo events found in the API response.")
+        
+    except Exception as e:
+        spinner.fail(f"Error fetching {league_name} data: {e}")
+    
+    print("\n")
+    safe_input("Press Enter to continue...")
+
+def view_raw_sports_data_menu():
+    """Display and handle raw sports data menu"""
+    while True:
+        try:
+            print("\n=== View Raw Sports Data Menu ===")
+            print("1. NFL")
+            print("2. MLB")
+            print("3. NHL")
+            print("4. NBA")
+            print("5. MLS")
+            print("6. College Football")
+            print("7. Return to sports scores menu")
+            
+            choice = safe_input("\nEnter your choice (1-7): ")
+            
+            if choice == "1":
+                view_raw_sports_data("football", "nfl", "NFL")
+            elif choice == "2":
+                view_raw_sports_data("baseball", "mlb", "MLB")
+            elif choice == "3":
+                view_raw_sports_data("hockey", "nhl", "NHL")
+            elif choice == "4":
+                view_raw_sports_data("basketball", "nba", "NBA")
+            elif choice == "5":
+                view_raw_sports_data("soccer", "usa.1", "MLS")
+            elif choice == "6":
+                view_raw_sports_data("football", "college-football", "NCAA Football")
+            elif choice == "7":
+                return
+            else:
+                print("\nInvalid choice. Please enter 1-7.")
+        except KeyboardInterrupt:
+            exit_gracefully("\n\nProgram interrupted. Goodbye!")
+        except EOFError:
+            exit_gracefully("\n\nEnd of input. Goodbye!")
+
+# Keep this for backward compatibility
+def nfl_menu():
+    """Redirects to the scores menu for backward compatibility"""
+    scores_menu()
 
 def get_news(domain=None):
     """Fetch news articles using GNews"""
@@ -315,7 +516,7 @@ def get_news(domain=None):
         
         if not articles:
             print(f"\nNo articles found for domain: {domain}")
-            return
+            return False
             
         print(f"\nLatest news from {domain}:")
         print("-" * 80)
@@ -329,33 +530,89 @@ def get_news(domain=None):
             print(f"Published: {friendly_date}")
             print(f"URL: {article['url']}")
             print("-" * 80)
+        
+        # Save the domain to database if successful
+        save_news_site(domain)
+        return True
             
     except Exception as e:
         print(f"\nUnexpected error: {e}")
     finally:
         spinner.stop()
     
-    input("\nPress Enter to continue...")
+    safe_input("\nPress Enter to continue...")
 
 def news_menu():
     """Display and handle news menu"""
+    # Default news sites to include
+    default_sites = ['wsj.com', 'washingtonpost.com', 'nytimes.com', 'apnews.com', 'whitehouse.gov']
+    
+    # Initialize default news sites in the database if they don't exist
+    for site in default_sites:
+        save_news_site(site)
+    
     while True:
-        print("\n=== News Menu ===")
-        print("1. Get news from WSJ")
-        print("2. Get news from specific domain")
-        print("3. Return to main menu")
-        
-        choice = input("\nEnter your choice (1-3): ")
-        
-        if choice == "1":
-            get_news()  # Will use default wsj.com
-        elif choice == "2":
-            domain = input("\nEnter domain (e.g., wsj.com): ")
-            get_news(domain)
-        elif choice == "3":
-            return
-        else:
-            print("\nInvalid choice. Please enter 1-3.")
+        try:
+            # Get saved news sites from database
+            all_sites = get_saved_news_sites()
+            
+            # Separate default sites from user-saved sites
+            user_saved_sites = [site for site in all_sites if site not in default_sites]
+            
+            print("\n=== News Menu ===")
+            
+            # Display menu options
+            print("1. Enter a new domain")
+            print("2. Return to main menu")
+            
+            # Display default news sites section
+            print("\n=== Default News Sites ===")
+            next_index = 3
+            for i, site in enumerate(default_sites, next_index):
+                print(f"{i}. {site}")
+            
+            next_index += len(default_sites)
+            
+            # Display user-saved news sites section, if any
+            if user_saved_sites:
+                print("\n=== Saved News Sites ===")
+                for i, site in enumerate(user_saved_sites, next_index):
+                    print(f"{i}. {site}")
+            
+            # Add return to main menu at the bottom as well
+            print(f"\n{next_index + len(user_saved_sites)}. Return to main menu")
+            
+            # Calculate total options
+            total_options = 2 + len(default_sites) + len(user_saved_sites) + 1  # +1 for the extra return option
+            choice = safe_input(f"\nEnter your choice (1-{total_options}): ")
+            
+            try:
+                choice_num = int(choice)
+                if choice_num == 1:
+                    domain = safe_input("\nEnter domain (e.g., wsj.com): ")
+                    if domain:
+                        get_news(domain)
+                elif choice_num == 2:
+                    return
+                elif 3 <= choice_num < 3 + len(default_sites):
+                    # User selected a default site
+                    selected_site = default_sites[choice_num - 3]
+                    get_news(selected_site)
+                elif 3 + len(default_sites) <= choice_num < total_options:
+                    # User selected a saved site
+                    selected_site = user_saved_sites[choice_num - (3 + len(default_sites))]
+                    get_news(selected_site)
+                elif choice_num == total_options:
+                    # User selected the return to main menu option at the bottom
+                    return
+                else:
+                    print(f"\nInvalid choice. Please enter 1-{total_options}.")
+            except ValueError:
+                print("\nInvalid input. Please enter a number.")
+        except KeyboardInterrupt:
+            exit_gracefully("\n\nProgram interrupted. Goodbye!")
+        except EOFError:
+            exit_gracefully("\n\nEnd of input. Goodbye!")
 
 def get_bls_data(series_id):
     """Fetch data from BLS API for a given series ID"""
@@ -436,23 +693,28 @@ def display_bls_data():
             
     # Removed global spinner stop from a finally block
     
-    input("\nPress Enter to continue...")
+    safe_input("\nPress Enter to continue...")
 
 def bls_menu():
     """Display and handle BLS data menu"""
     while True:
-        print("\n=== BLS Economic Indicators Menu ===")
-        print("1. View latest economic indicators")
-        print("2. Return to main menu")
-        
-        choice = input("\nEnter your choice (1-2): ")
-        
-        if choice == "1":
-            display_bls_data()
-        elif choice == "2":
-            return
-        else:
-            print("\nInvalid choice. Please enter 1-2.")
+        try:
+            print("\n=== BLS Economic Indicators Menu ===")
+            print("1. View latest economic indicators")
+            print("2. Return to main menu")
+            
+            choice = safe_input("\nEnter your choice (1-2): ")
+            
+            if choice == "1":
+                display_bls_data()
+            elif choice == "2":
+                return
+            else:
+                print("\nInvalid choice. Please enter 1-2.")
+        except KeyboardInterrupt:
+            exit_gracefully("\n\nProgram interrupted. Goodbye!")
+        except EOFError:
+            exit_gracefully("\n\nEnd of input. Goodbye!")
 
 def extract_state(matched_address):
     """Extract the state from the matched address"""
@@ -552,7 +814,7 @@ def get_station_info(station_id):
 
 def lookup_tides():
     """Handle tide lookup logic"""
-    address = input("\nEnter address (street, city, state, zip code): ")
+    address = safe_input("\nEnter address (street, city, state, zip code): ")
     
     # Get coordinates
     location_data = get_coordinates(address)
@@ -615,7 +877,7 @@ def select_saved_address_for_tides():
     for i, (address, matched_address, lat, lon, _) in enumerate(addresses, 1):
         print(f"{i}. {matched_address}")
     
-    choice = input("\nSelect address number (or 0 to go back): ")
+    choice = safe_input("\nSelect address number (or 0 to go back): ")
     try:
         choice = int(choice)
         if choice == 0:
@@ -654,7 +916,7 @@ def select_saved_address_for_tides():
                 print(f"\nError: Failed to retrieve tide data. {e}")
                 return
             
-            input("\nPress Enter to continue...")
+            safe_input("\nPress Enter to continue...")
         else:
             print("\nInvalid selection.")
     except ValueError:
@@ -663,21 +925,26 @@ def select_saved_address_for_tides():
 def tides_menu():
     """Display and handle tides menu"""
     while True:
-        print("\n=== Tides Menu ===")
-        print("1. Enter new address")
-        print("2. Select from saved addresses")
-        print("3. Return to main menu")
-        
-        choice = input("\nEnter your choice (1-3): ")
-        
-        if choice == "1":
-            lookup_tides()
-        elif choice == "2":
-            select_saved_address_for_tides()
-        elif choice == "3":
-            return
-        else:
-            print("\nInvalid choice. Please enter 1-3.")
+        try:
+            print("\n=== Tides Menu ===")
+            print("1. Enter new address")
+            print("2. Select from saved addresses")
+            print("3. Return to main menu")
+            
+            choice = safe_input("\nEnter your choice (1-3): ")
+            
+            if choice == "1":
+                lookup_tides()
+            elif choice == "2":
+                select_saved_address_for_tides()
+            elif choice == "3":
+                return
+            else:
+                print("\nInvalid choice. Please enter 1-3.")
+        except KeyboardInterrupt:
+            exit_gracefully("\n\nProgram interrupted. Goodbye!")
+        except EOFError:
+            exit_gracefully("\n\nEnd of input. Goodbye!")
 
 def get_salesforce_credentials():
     """Prompt the user for Salesforce credentials and verify them"""
@@ -751,26 +1018,36 @@ def query_salesforce_contacts(sf, filter_value):
 
 def salesforce_menu():
     """Display and handle Salesforce menu"""
-    print("\n=== Salesforce Menu ===\n")
-    sf = get_salesforce_credentials()
+    try:
+        print("\n=== Salesforce Menu ===\n")
+        sf = get_salesforce_credentials()
 
-    if sf is None:
-        input("\nPress Enter to return to the main menu...")
-        return
-
-    while True:
-        print("\n1. Query contacts")
-        print("2. Return to main menu")
-        
-        choice = input("\nEnter your choice (1-2): ")
-        
-        if choice == "1":
-            filter_value = input("\nEnter filter value: ")
-            query_salesforce_contacts(sf, filter_value)
-        elif choice == "2":
+        if sf is None:
+            safe_input("\nPress Enter to return to the main menu...")
             return
-        else:
-            print("\nInvalid choice. Please enter 1-2.")
+
+        while True:
+            try:
+                print("\n1. Query contacts")
+                print("2. Return to main menu")
+                
+                choice = safe_input("\nEnter your choice (1-2): ")
+                
+                if choice == "1":
+                    filter_value = safe_input("\nEnter filter value: ")
+                    query_salesforce_contacts(sf, filter_value)
+                elif choice == "2":
+                    return
+                else:
+                    print("\nInvalid choice. Please enter 1-2.")
+            except KeyboardInterrupt:
+                exit_gracefully("\n\nProgram interrupted. Goodbye!")
+            except EOFError:
+                exit_gracefully("\n\nEnd of input. Goodbye!")
+    except KeyboardInterrupt:
+        exit_gracefully("\n\nProgram interrupted. Goodbye!")
+    except EOFError:
+        exit_gracefully("\n\nEnd of input. Goodbye!")
 
 def get_google_maps_url_for_coordinates(lat, lon):
     """Generate Google Maps URL for the given coordinates"""
@@ -782,50 +1059,56 @@ def earthquakes_menu():
     # https://earthquake.usgs.gov/fdsnws/event/1/
     # https://earthquake.usgs.gov/fdsnws/event/1/#parameters
 
-
-    spinner = Halo('Getting USGS data...')
-    spinner.start()
     try:
-        # Get the current date one day in the future in YYYY-MM-DD format
-        current_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        # Get the date one day before today
-        start_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        spinner = Halo('Getting USGS data...')
+        spinner.start()
+        try:
+            # Get the current date one day in the future in YYYY-MM-DD format
+            current_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            # Get the date one day before today
+            start_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
-        # Insert the current date into the URL
-        url = f"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime={start_date}&endtime={current_date}&minmagnitude=5"
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-        
-        if not data.get('features'):
-            print("\nNo 5.0 earthquakes found today.")
-            return
-        
-        print("\n5.0 earthquakes today:")
-        print("-" * 50)
-        print(f"\nUSGS URL: {url}\n")
-        
-        for feature in data['features']:
-            properties = feature['properties']
-            mag = properties['mag']
-            place = properties['place']
-            time = datetime.fromtimestamp(properties['time'] / 1000).strftime('%Y-%m-%d %H:%M:%S UTC')
-            coordinates = feature['geometry']['coordinates']
-            lon, lat = coordinates[0], coordinates[1]
-            maps_url = get_google_maps_url_for_coordinates(lat, lon)
-
-            print(f"Magnitude: {mag}")
-            print(f"Place: {place}")
-            print(f"Time: {time}")
-            print(f"Google Maps URL: {maps_url}")
+            # Insert the current date into the URL
+            url = f"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime={start_date}&endtime={current_date}&minmagnitude=5"
+            response = requests.get(url)
+            response.raise_for_status()
+            data = response.json()
+            
+            if not data.get('features'):
+                print("\nNo 5.0 earthquakes found today.")
+                return
+            
+            print("\n5.0 earthquakes today:")
             print("-" * 50)
+            print(f"\nUSGS URL: {url}\n")
+            
+            for feature in data['features']:
+                properties = feature['properties']
+                mag = properties['mag']
+                place = properties['place']
+                time = datetime.fromtimestamp(properties['time'] / 1000).strftime('%Y-%m-%d %H:%M:%S UTC')
+                coordinates = feature['geometry']['coordinates']
+                lon, lat = coordinates[0], coordinates[1]
+                maps_url = get_google_maps_url_for_coordinates(lat, lon)
+
+                print(f"Magnitude: {mag}")
+                print(f"Place: {place}")
+                print(f"Time: {time}")
+                print(f"Google Maps URL: {maps_url}")
+                print("-" * 50)
+            
+        except Exception as e:
+            print(f"\nError getting earthquake data: {e}")
+        finally:
+            spinner.stop()
         
-    except Exception as e:
-        print(f"\nError getting earthquake data: {e}")
-    finally:
-        spinner.stop()
+        try:
+            safe_input("\nPress Enter to continue...")
+        except (KeyboardInterrupt, EOFError):
+            exit_gracefully("\n\nProgram interrupted. Goodbye!")
     
-    input("\nPress Enter to continue...")
+    except (KeyboardInterrupt, EOFError):
+        exit_gracefully("\n\nProgram interrupted. Goodbye!")
 
 def get_fred_data(series_id, api_key):
     """Fetch data from FRED API for a given series ID."""
@@ -842,7 +1125,7 @@ def display_fred_indicators():
         print("\nError: FRED_API_KEY environment variable not set.")
         print("Please set it to your FRED API key to use this feature.")
         print("You can obtain a key from: https://fred.stlouisfed.org/docs/api/api_key.html")
-        input("\nPress Enter to continue...")
+        safe_input("\nPress Enter to continue...")
         return
 
     # Removed global spinner initialization
@@ -951,62 +1234,92 @@ def display_fred_indicators():
             else:
                 print(f"  Change from Previous ({result['previous_date']}): {result['change']:+.2f} (from {result['previous_value']})")
             
-    input("\nPress Enter to continue...")
+    safe_input("\nPress Enter to continue...")
 
 def fred_menu():
     """Display and handle FRED data menu"""
     while True:
-        print("\n=== US Federal Reserve Indicators Menu ===")
-        print("1. View latest Federal Reserve indicators")
-        print("2. Return to main menu")
-        
-        choice = input("\nEnter your choice (1-2): ")
-        
-        if choice == "1":
-            display_fred_indicators()
-        elif choice == "2":
-            return
-        else:
-            print("\nInvalid choice. Please enter 1-2.")
+        try:
+            print("\n=== US Federal Reserve Indicators Menu ===")
+            print("1. View latest Federal Reserve indicators")
+            print("2. Return to main menu")
+            
+            choice = safe_input("\nEnter your choice (1-2): ")
+            
+            if choice == "1":
+                display_fred_indicators()
+            elif choice == "2":
+                return
+            else:
+                print("\nInvalid choice. Please enter 1-2.")
+        except KeyboardInterrupt:
+            exit_gracefully("\n\nProgram interrupted. Goodbye!")
+        except EOFError:
+            exit_gracefully("\n\nEnd of input. Goodbye!")
 
 def main_menu():
     """Display and handle main menu"""
     init_db()  # Ensure database exists
     while True:
-        print("\n=== Multi-Service CLI Tool ===")
-        print("1. Weather Lookup")
-        print("2. NFL Scores")
-        print("3. News")
-        print("4. BLS Economic Indicators")
-        print("5. US Federal Reserve Indicators") # Moved FRED
-        print("6. Tides") # Renumbered
-        print("7. Salesforce") # Renumbered
-        print("8. Earthquakes") # Renumbered
-        print("9. Quit")
-        
-        choice = input("\nEnter your choice (1-9): ")
-        
-        if choice == "1":
-            weather_menu()
-        elif choice == "2":
-            nfl_menu()
-        elif choice == "3":
-            news_menu()
-        elif choice == "4":
-            bls_menu()
-        elif choice == "5": # Adjusted choice for FRED
-            fred_menu()
-        elif choice == "6": # Adjusted choice
-            tides_menu()
-        elif choice == "7": # Adjusted choice
-            salesforce_menu()
-        elif choice == "8": # Adjusted choice
-            earthquakes_menu()
-        elif choice == "9":
-            print("\nGoodbye!")
-            sys.exit(0)
-        else:
-            print("\nInvalid choice. Please enter 1-9.")
+        try:
+            print("\n=== Multi-Service CLI Tool ===")
+            print("1. Weather Lookup")
+            print("2. Scores")
+            print("3. News")
+            print("4. BLS Economic Indicators")
+            print("5. US Federal Reserve Indicators") # Moved FRED
+            print("6. Tides") # Renumbered
+            print("7. Salesforce") # Renumbered
+            print("8. Earthquakes") # Renumbered
+            print("9. Quit")
+            
+            choice = safe_input("\nEnter your choice (1-9): ")
+            
+            if choice == "1":
+                weather_menu()
+            elif choice == "2":
+                scores_menu()
+            elif choice == "3":
+                news_menu()
+            elif choice == "4":
+                bls_menu()
+            elif choice == "5": # Adjusted choice for FRED
+                fred_menu()
+            elif choice == "6": # Adjusted choice
+                tides_menu()
+            elif choice == "7": # Adjusted choice
+                salesforce_menu()
+            elif choice == "8": # Adjusted choice
+                earthquakes_menu()
+            elif choice == "9":
+                exit_gracefully()
+            else:
+                print("\nInvalid choice. Please enter 1-9.")
+        except KeyboardInterrupt:
+            exit_gracefully("\n\nProgram interrupted. Goodbye!")
+        except EOFError:
+            exit_gracefully("\n\nEnd of input. Goodbye!")
+
+def exit_gracefully(message="\nGoodbye!"):
+    """Exit the program gracefully with a message"""
+    print(message)
+    sys.exit(0)
+
+def safe_input(prompt):
+    """Safely handle user input with keyboard interrupt and EOF handling"""
+    try:
+        return input(prompt)
+    except (KeyboardInterrupt, EOFError):
+        exit_gracefully("\n\nProgram interrupted. Goodbye!")
 
 if __name__ == "__main__":
-    main_menu()
+    try:
+        # Notify users if debug mode is active
+        if DEBUG_MODE:
+            print("\n*** Debug Mode Active - Additional diagnostic information will be displayed ***")
+        
+        main_menu()
+    except KeyboardInterrupt:  # Handle Ctrl+C
+        exit_gracefully("\n\nProgram interrupted. Goodbye!")
+    except EOFError:  # Handle Ctrl+D
+        exit_gracefully("\n\nEnd of input. Goodbye!")
