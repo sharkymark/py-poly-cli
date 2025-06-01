@@ -5,6 +5,11 @@
         "context": "..",
 
     },
+    "containerEnv": {
+      "SALESFORCE_USERNAME": "${localEnv:SALESFORCE_USERNAME}",
+      "SALESFORCE_PASSWORD": "${localEnv:SALESFORCE_PASSWORD}",
+      "SALESFORCE_SECURITY_TOKEN": "${localEnv:SALESFORCE_SECURITY_TOKEN}",
+    },    
     "customizations": {
         "vscode": {
             "extensions": [
