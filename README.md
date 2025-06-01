@@ -110,6 +110,17 @@ Navigate through the menus to:
 
 The application features graceful exit handling with Ctrl+C and Ctrl+D, allowing you to exit safely from any menu.
 
+## Environment Variables
+
+To use the Salesforce and Federal Reserve APIs, you will need to set the following environment variables:
+
+*   `SALESFORCE_USERNAME`: Your Salesforce username.
+*   `SALESFORCE_PASSWORD`: Your Salesforce password.
+*   `SALESFORCE_SECURITY_TOKEN`: Your Salesforce security token.
+*   `FRED_API_KEY`: Your FRED API key for accessing economic indicators.
+
+When using the provided Dev Container, these variables can be configured in your local environment and will be passed into the container. Refer to the `.devcontainer/devcontainer.json` file for more details on how these are sourced.
+
 ## Resources
 
 ### APIs Used

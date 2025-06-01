@@ -9,6 +9,7 @@
       "SALESFORCE_USERNAME": "${localEnv:SALESFORCE_USERNAME}",
       "SALESFORCE_PASSWORD": "${localEnv:SALESFORCE_PASSWORD}",
       "SALESFORCE_SECURITY_TOKEN": "${localEnv:SALESFORCE_SECURITY_TOKEN}",
+      "FRED_API_KEY": "${localEnv:FRED_API_KEY}"
     },    
     "customizations": {
         "vscode": {
