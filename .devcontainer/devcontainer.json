@@ -28,5 +28,5 @@
     },
 
 
-    "postStartCommand": "python3 poly_cli.py"
+    "postStartCommand": ""
 } 
